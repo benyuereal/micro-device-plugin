@@ -10,10 +10,11 @@ type HuaweiDevice struct {
 	healthy bool
 }
 
-func (d *HuaweiDevice) ID() string        { return d.id }
-func (d *HuaweiDevice) IsHealthy() bool   { return d.healthy }
-func (d *HuaweiDevice) GetVendor() string { return "huawei" }
-func (d *HuaweiDevice) GetPath() string   { return "/dev/davinci" + d.id }
+func (d *HuaweiDevice) ID() string              { return d.id }
+func (d *HuaweiDevice) IsHealthy() bool         { return d.healthy }
+func (d *HuaweiDevice) GetVendor() string       { return "huawei" }
+func (d *HuaweiDevice) GetResourceName() string { return "huawei.com/vgpu" }
+func (d *HuaweiDevice) GetPath() string         { return "/dev/davinci" + d.id }
 
 type HuaweiManager struct {
 	lastDiscovery time.Time

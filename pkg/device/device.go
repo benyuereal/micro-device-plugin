@@ -5,6 +5,7 @@ type GPUDevice interface {
 	ID() string
 	IsHealthy() bool
 	GetVendor() string
+	GetResourceName() string
 	GetPath() string
 }
 

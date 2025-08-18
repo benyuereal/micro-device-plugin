@@ -13,11 +13,10 @@ type NVIDIADevice struct {
 	healthy bool
 }
 
-func (d *NVIDIADevice) ID() string              { return d.id }
-func (d *NVIDIADevice) IsHealthy() bool         { return d.healthy }
-func (d *NVIDIADevice) GetVendor() string       { return "nvidia" }
-func (d *NVIDIADevice) GetResourceName() string { return "nvidia.com/vgpu" }
-func (d *NVIDIADevice) GetPath() string         { return "/dev/nvidia" + d.id }
+func (d *NVIDIADevice) ID() string        { return d.id }
+func (d *NVIDIADevice) IsHealthy() bool   { return d.healthy }
+func (d *NVIDIADevice) GetVendor() string { return "nvidia" }
+func (d *NVIDIADevice) GetPath() string   { return "/dev/nvidia" + d.id }
 
 type NVIDIAManager struct {
 	lastDiscovery time.Time

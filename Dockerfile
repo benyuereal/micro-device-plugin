@@ -19,8 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     kmod \
-    strace \
+    libunwind8 \
     && rm -rf /var/lib/apt/lists/*
+
+# 设置环境变量（修复警告问题）
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
 
 # 从构建阶段复制静态编译的二进制文件
 COPY --from=builder /usr/bin/micro-device-plugin /usr/bin/

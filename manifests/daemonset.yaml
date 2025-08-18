@@ -21,36 +21,33 @@ spec:
           effect: NoSchedule
       containers:
         - name: plugin
-          image: binyue/micro-device-plugin:v2  # 使用优化后的镜像
+          image: binyue/micro-device-plugin:v1.0.1
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
           resources:
             limits:
-              cpu: 100m  # 减少资源限制
+              cpu: 100m
               memory: 128Mi
           env:
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            # 新增环境变量 - 关键修复
+            - name: LD_LIBRARY_PATH
+              value: /usr/lib/x86_64-linux-gnu:/host-lib
           volumeMounts:
             - name: device-plugin
               mountPath: /var/lib/kubelet/device-plugins
             - name: dev
               mountPath: /dev
-            # 添加NVIDIA工具挂载 - 关键修复
+            # 修改挂载点 - 避免覆盖系统路径
             - name: nvidia-bin
-              mountPath: /usr/bin/nvidia-smi
+              mountPath: /host-driver/nvidia-smi
               subPath: nvidia-smi
             - name: nvidia-lib
-              mountPath: /usr/lib/x86_64-linux-gnu
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-            initialDelaySeconds: 15  # 缩短初始延迟
-            periodSeconds: 20
+              mountPath: /host-lib
       volumes:
         - name: device-plugin
           hostPath:
@@ -59,7 +56,6 @@ spec:
         - name: dev
           hostPath:
             path: /dev
-        # 添加NVIDIA工具挂载 - 关键修复
         - name: nvidia-bin
           hostPath:
             path: /usr/bin

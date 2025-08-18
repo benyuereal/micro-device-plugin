@@ -24,30 +24,34 @@ const (
 )
 
 type DevicePluginServer struct {
-	vendor     string
-	resource   string
-	socket     string
-	stop       chan struct{}
-	healthChan chan string
-	allocator  allocator.Allocator
-	manager    device.DeviceManager
-	server     *grpc.Server
+	vendor          string
+	resource        string
+	socket          string
+	stop            chan struct{}
+	healthChan      chan string
+	allocator       allocator.Allocator
+	manager         device.DeviceManager
+	server          *grpc.Server
+	lastDeviceState map[string]string // 使用字符串记录健康状态
 }
 
 func New(vendor string, manager device.DeviceManager) *DevicePluginServer {
 	return &DevicePluginServer{
-		vendor:     vendor,
-		resource:   vendor + ".com/vgpu",
-		socket:     path.Join(pluginapi.DevicePluginPath, socketPrefix+"."+vendor),
-		stop:       make(chan struct{}),
-		healthChan: make(chan string, 1),
-		manager:    manager,
-		allocator:  allocator.NewSimpleAllocator(),
+		vendor:          vendor,
+		resource:        vendor + ".com/vgpu",
+		socket:          path.Join(pluginapi.DevicePluginPath, socketPrefix+"."+vendor),
+		stop:            make(chan struct{}),
+		healthChan:      make(chan string, 1),
+		manager:         manager,
+		allocator:       allocator.NewSimpleAllocator(),
+		lastDeviceState: make(map[string]string),
 	}
 }
 
 // ListAndWatch 实现设备插件服务
 func (s *DevicePluginServer) ListAndWatch(_ *pluginapi.Empty, stream pluginapi.DevicePlugin_ListAndWatchServer) error {
+	klog.Infof("Starting ListAndWatch for %s device plugin", s.vendor)
+
 	// 初始设备列表
 	if err := s.updateDeviceList(stream); err != nil {
 		return err
@@ -60,15 +64,17 @@ func (s *DevicePluginServer) ListAndWatch(_ *pluginapi.Empty, stream pluginapi.D
 	for {
 		select {
 		case <-ticker.C:
+			klog.V(5).Infof("Periodic device list update for %s", s.vendor)
 			if err := s.updateDeviceList(stream); err != nil {
 				return err
 			}
 		case id := <-s.healthChan:
+			klog.Warningf("Device %s health status changed, updating device list", id)
 			if err := s.updateDeviceList(stream); err != nil {
 				return err
 			}
-			klog.Warningf("Device %s health status changed", id)
 		case <-s.stop:
+			klog.Infof("Stopping ListAndWatch for %s device plugin", s.vendor)
 			return nil
 		}
 	}
@@ -77,10 +83,15 @@ func (s *DevicePluginServer) ListAndWatch(_ *pluginapi.Empty, stream pluginapi.D
 func (s *DevicePluginServer) updateDeviceList(stream pluginapi.DevicePlugin_ListAndWatchServer) error {
 	devices, err := s.manager.DiscoverGPUs()
 	if err != nil {
+		klog.Errorf("Failed to discover devices: %v", err)
 		return fmt.Errorf("failed to discover devices: %v", err)
 	}
 
 	deviceList := make([]*pluginapi.Device, len(devices))
+	healthStatusCount := map[string]int{
+		pluginapi.Healthy:   0,
+		pluginapi.Unhealthy: 0}
+
 	for i, d := range devices {
 		// 更新设备健康状态
 		healthy := s.manager.CheckHealth(d.ID())
@@ -88,6 +99,13 @@ func (s *DevicePluginServer) updateDeviceList(stream pluginapi.DevicePlugin_List
 		if !healthy {
 			state = pluginapi.Unhealthy
 		}
+		healthStatusCount[state]++
+
+		// 记录状态变化
+		if prevState, exists := s.lastDeviceState[d.ID()]; exists && prevState != state {
+			klog.Infof("Device %s health changed from %s to %s", d.ID(), prevState, state)
+		}
+		s.lastDeviceState[d.ID()] = state
 
 		deviceList[i] = &pluginapi.Device{
 			ID:     d.ID(),
@@ -95,12 +113,16 @@ func (s *DevicePluginServer) updateDeviceList(stream pluginapi.DevicePlugin_List
 		}
 	}
 
-	klog.Infof("Updating device list for %s: %d devices", s.vendor, len(deviceList))
+	klog.Infof("Updating device list for %s: %d devices (%d healthy, %d unhealthy)",
+		s.vendor, len(deviceList), healthStatusCount[pluginapi.Healthy], healthStatusCount[pluginapi.Unhealthy])
+
 	return stream.Send(&pluginapi.ListAndWatchResponse{Devices: deviceList})
 }
 
 // Allocate 设备分配实现
 func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
+	klog.Infof("Received Allocate request for %s: %v", s.resource, req.ContainerRequests)
+
 	response := pluginapi.AllocateResponse{}
 
 	for _, containerReq := range req.ContainerRequests {
@@ -112,8 +134,11 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			deviceIDs = append(deviceIDs, id)
 		}
 
+		klog.Infof("Allocating devices for container: %v", deviceIDs)
+
 		// 尝试分配这些设备
 		if err := s.allocator.Allocate(deviceIDs); err != nil {
+			klog.Errorf("Allocation failed for devices %v: %v", deviceIDs, err)
 			return nil, fmt.Errorf("allocation failed: %v", err)
 		}
 
@@ -121,6 +146,7 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		containerResp.Envs = map[string]string{
 			s.resource + "_DEVICE_IDS": strings.Join(deviceIDs, ","),
 		}
+		klog.V(4).Infof("Set environment variable: %s_DEVICE_IDS=%s", s.resource, containerResp.Envs[s.resource+"_DEVICE_IDS"])
 
 		// 添加设备挂载
 		for _, id := range deviceIDs {
@@ -139,12 +165,16 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 					ContainerPath: devicePath,
 					Permissions:   "rw",
 				})
+				klog.V(4).Infof("Adding device mount for %s: %s", id, devicePath)
+			} else {
+				klog.Warningf("Device path not found for device ID: %s", id)
 			}
 		}
 
 		response.ContainerResponses = append(response.ContainerResponses, containerResp)
 	}
 
+	klog.Infof("Allocation successful for %s", s.resource)
 	return &response, nil
 }
 
@@ -169,19 +199,24 @@ func (s *DevicePluginServer) GetPreferredAllocation(ctx context.Context, req *pl
 
 // Start 启动设备插件服务
 func (s *DevicePluginServer) Start() error {
+	klog.Infof("Starting %s device plugin", s.vendor)
+
 	// 确保插件目录存在
 	if err := os.MkdirAll(pluginapi.DevicePluginPath, 0755); err != nil {
+		klog.Errorf("Failed to create device plugin directory: %v", err)
 		return fmt.Errorf("failed to create device plugin directory: %v", err)
 	}
 
 	// 清理现有的socket文件
 	if err := syscall.Unlink(s.socket); err != nil && !os.IsNotExist(err) {
+		klog.Errorf("Failed to unlink socket: %v", err)
 		return fmt.Errorf("failed to unlink socket: %v", err)
 	}
 
 	// 创建监听
 	lis, err := net.Listen("unix", s.socket)
 	if err != nil {
+		klog.Errorf("Failed to listen on socket: %v", err)
 		return fmt.Errorf("failed to listen on socket: %v", err)
 	}
 
@@ -202,11 +237,13 @@ func (s *DevicePluginServer) Start() error {
 	defer cancel()
 
 	if err := waitForSocket(connCtx, s.socket); err != nil {
+		klog.Errorf("Failed to start gRPC server: %v", err)
 		return fmt.Errorf("failed to start gRPC server: %v", err)
 	}
 
 	// 注册到kubelet
 	if err := s.registerWithKubelet(); err != nil {
+		klog.Errorf("Failed to register with kubelet: %v", err)
 		return fmt.Errorf("failed to register with kubelet: %v", err)
 	}
 
@@ -216,6 +253,7 @@ func (s *DevicePluginServer) Start() error {
 
 // Stop 停止设备插件
 func (s *DevicePluginServer) Stop() {
+	klog.Infof("Stopping %s device plugin", s.vendor)
 	close(s.stop)
 	if s.server != nil {
 		s.server.Stop()
@@ -224,18 +262,25 @@ func (s *DevicePluginServer) Stop() {
 
 // HealthCheck 后台健康检查
 func (s *DevicePluginServer) HealthCheck(ctx context.Context, interval time.Duration) {
+	klog.Infof("Starting health check for %s plugin with interval %v", s.vendor, interval)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			devices, _ := s.manager.DiscoverGPUs()
+			devices, err := s.manager.DiscoverGPUs()
+			if err != nil {
+				klog.Errorf("Failed to discover devices during health check: %v", err)
+				continue
+			}
+
 			for _, d := range devices {
 				currentHealth := d.IsHealthy()
 				actualHealth := s.manager.CheckHealth(d.ID())
 
 				if currentHealth != actualHealth {
+					klog.Warningf("Device %s health status changed from %v to %v", d.ID(), currentHealth, actualHealth)
 					s.healthChan <- d.ID()
 				}
 			}
@@ -249,6 +294,8 @@ func (s *DevicePluginServer) HealthCheck(ctx context.Context, interval time.Dura
 // *********** 辅助方法 ***********
 
 func (s *DevicePluginServer) registerWithKubelet() error {
+	klog.Infof("Registering with kubelet at %s", kubeletSocket)
+
 	conn, err := grpc.Dial(kubeletSocket, grpc.WithInsecure(),
 		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", addr)
@@ -272,6 +319,8 @@ func (s *DevicePluginServer) registerWithKubelet() error {
 }
 
 func waitForSocket(ctx context.Context, socket string) error {
+	klog.V(4).Infof("Waiting for socket %s to be ready", socket)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -279,6 +328,7 @@ func waitForSocket(ctx context.Context, socket string) error {
 		default:
 			if conn, err := net.Dial("unix", socket); err == nil {
 				conn.Close()
+				klog.V(4).Infof("Socket %s is ready", socket)
 				return nil
 			}
 			time.Sleep(restartDelay)

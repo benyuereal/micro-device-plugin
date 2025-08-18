@@ -2,7 +2,8 @@
 FROM golang:1.19-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN go build -o micro-device-plugin ./cmd
+# 静态编译（兼容 Ubuntu）
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o micro-device-plugin ./cmd
 
 # 最终运行时镜像
 FROM ubuntu:22.04
@@ -38,4 +39,4 @@ HEALTHCHECK --interval=30s --timeout=10s \
   CMD curl -f http://localhost:8080/health || exit 1
 
 # 调试模式入口点
-CMD ["sh", "-c", "strace -f /usr/bin/micro-device-plugin || sleep 3600"]
+ENTRYPOINT ["/usr/bin/micro-device-plugin"]

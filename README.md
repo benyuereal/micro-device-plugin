@@ -26,3 +26,19 @@ sudo apt install -y golang-1
 ```
 
 
+### 镜像管理
+```shell
+docker build -t binyue/micro-device-plugin:v3 .
+
+docker push binyue/micro-device-plugin:v3
+
+
+
+```
+
+### pod 管理
+```shell
+kubectl get pod -n kube-system
+kubectl describe pod -l app=micro-device-plugin -n kube-system
+```
+

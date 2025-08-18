@@ -28,9 +28,10 @@ sudo apt install -y golang-1
 
 ### 镜像管理
 ```shell
-docker build -t binyue/micro-device-plugin:v3 .
+docker rmi binyue/micro-device-plugin:v2
+docker build -t binyue/micro-device-plugin:v2 .
 
-docker push binyue/micro-device-plugin:v3
+docker push binyue/micro-device-plugin:v2
 
 
 
@@ -40,5 +41,15 @@ docker push binyue/micro-device-plugin:v3
 ```shell
 kubectl get pod -n kube-system
 kubectl describe pod -l app=micro-device-plugin -n kube-system
+kubectl logs -f -l app=micro-device-plugin -n kube-system
+kubectl delete pod -l app=micro-device-plugin -n kube-system
 ```
+
+
+### 登陆到容器里面
+```shell
+
+kubectl exec -it micro-device-plugin-lbt4q n -n kube-system -- sh
+```
+
 

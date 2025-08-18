@@ -1,4 +1,3 @@
-# device-plugin.yaml
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -22,14 +21,14 @@ spec:
           effect: NoSchedule
       containers:
         - name: plugin
-          image: binyue/micro-device-plugin:v2
+          image: binyue/micro-device-plugin:v2  # 使用优化后的镜像
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
           resources:
             limits:
-              cpu: 200m
-              memory: 256Mi
+              cpu: 100m  # 减少资源限制
+              memory: 128Mi
           env:
             - name: NODE_NAME
               valueFrom:
@@ -40,14 +39,18 @@ spec:
               mountPath: /var/lib/kubelet/device-plugins
             - name: dev
               mountPath: /dev
-            - name: nvidia
-              mountPath: /usr/local/nvidia
+            # 添加NVIDIA工具挂载 - 关键修复
+            - name: nvidia-bin
+              mountPath: /usr/bin/nvidia-smi
+              subPath: nvidia-smi
+            - name: nvidia-lib
+              mountPath: /usr/lib/x86_64-linux-gnu
           livenessProbe:
             httpGet:
               path: /health
               port: 8080
-            initialDelaySeconds: 20
-            periodSeconds: 30
+            initialDelaySeconds: 15  # 缩短初始延迟
+            periodSeconds: 20
       volumes:
         - name: device-plugin
           hostPath:
@@ -56,6 +59,10 @@ spec:
         - name: dev
           hostPath:
             path: /dev
-        - name: nvidia
+        # 添加NVIDIA工具挂载 - 关键修复
+        - name: nvidia-bin
           hostPath:
-            path: /usr/local/nvidia
+            path: /usr/bin
+        - name: nvidia-lib
+          hostPath:
+            path: /usr/lib/x86_64-linux-gnu

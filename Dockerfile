@@ -1,42 +1,33 @@
-# 基础构建阶段
-FROM golang:1.19-alpine AS builder
-WORKDIR /app
-COPY . .
-# 静态编译（兼容 Ubuntu）
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o micro-device-plugin ./cmd
+# 第一阶段：使用官方golang镜像构建
+FROM golang:1.19 AS builder
 
-# 最终运行时镜像
+# 设置工作目录
+WORKDIR /workspace
+COPY . .
+
+# 静态编译，确保零依赖
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -a -installsuffix cgo \
+    -ldflags="-w -s" \
+    -o /usr/bin/micro-device-plugin ./cmd
+
+# 第二阶段：使用Ubuntu基础镜像
 FROM ubuntu:22.04
 
-LABEL maintainer="benyuereal"
-
-# 安装基础工具和通用依赖
+# 安装必要的运行依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
     kmod \
-    ca-certificates \
-    # NVIDIA 工具包（确保有nvidia-smi）
-    nvidia-utils-525 \
     strace \
-    lsof \
     && rm -rf /var/lib/apt/lists/*
 
-# 华为 NPU 工具包（在实际环境中需要替换为具体依赖）
-# RUN if [ "$GPU_VENDOR" = "huawei" ]; then \
-#        apt-get update && apt-get install -y huawei-npu-toolkit; \
-#    fi
-
-# 复制应用二进制文件
-COPY --from=builder /app/micro-device-plugin /usr/bin/
-RUN chmod +x /usr/bin/micro-device-plugin
-
-# 验证文件存在性和依赖
-RUN test -f /usr/bin/micro-device-plugin && echo "Binary exists" || exit 1
-RUN ldd /usr/bin/micro-device-plugin || true
+# 从构建阶段复制静态编译的二进制文件
+COPY --from=builder /usr/bin/micro-device-plugin /usr/bin/
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s \
-  CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
-# 调试模式入口点
+# 容器入口点
 ENTRYPOINT ["/usr/bin/micro-device-plugin"]

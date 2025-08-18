@@ -101,19 +101,23 @@ func (m *NVIDIAManager) DiscoverGPUs() ([]GPUDevice, error) {
 	return devices, nil
 }
 
+// nvidia.go 中修改 CheckHealth 方法
 func (m *NVIDIAManager) CheckHealth(deviceID string) bool {
 	klog.V(5).Infof("Checking health of NVIDIA device %s", deviceID)
 
-	// 使用新的命令执行方式
-	out, err := runNvidiaSmiCommand("-i", deviceID, "--query-gpu=health", "--format=csv,noheader")
+	// 使用更通用的健康检查方式
+	out, err := runNvidiaSmiCommand("-i", deviceID, "--query-gpu=utilization.gpu", "--format=csv,noheader")
 	if err != nil {
 		klog.Errorf("Failed to check health for NVIDIA device %s: %v", deviceID, err)
 		return false
 	}
 
-	health := strings.TrimSpace(string(out))
-	healthy := health == "Healthy"
+	// 如果能够获取到GPU利用率数据，则认为设备健康
+	utilization := strings.TrimSpace(string(out))
+	if utilization != "" {
+		klog.V(4).Infof("NVIDIA device %s is healthy (utilization: %s%%)", deviceID, utilization)
+		return true
+	}
 
-	klog.V(4).Infof("NVIDIA device %s health status: %s", deviceID, health)
-	return healthy
+	return false
 }

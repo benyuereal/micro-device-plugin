@@ -29,9 +29,9 @@ sudo apt install -y golang-1
 ### 镜像管理
 ```shell
 docker rmi binyue/micro-device-plugin:v1.0.5
-docker build -t binyue/micro-device-plugin:v1.0.5 .
+docker build -t binyue/micro-device-plugin:v1.0.7 .
 
-docker push binyue/micro-device-plugin:v1.0.5
+docker push binyue/micro-device-plugin:v1.0.7
 
 
 

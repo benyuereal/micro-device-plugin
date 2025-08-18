@@ -13,3 +13,13 @@ type DeviceManager interface {
 	DiscoverGPUs() ([]GPUDevice, error)
 	CheckHealth(deviceID string) bool
 }
+
+type SimulatorDevice struct {
+	id      string
+	healthy bool
+}
+
+func (d *SimulatorDevice) ID() string        { return d.id }
+func (d *SimulatorDevice) IsHealthy() bool   { return d.healthy }
+func (d *SimulatorDevice) GetVendor() string { return "simulator" }
+func (d *SimulatorDevice) GetPath() string   { return "/dev/sim_gpu" + d.id }

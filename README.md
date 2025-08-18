@@ -17,3 +17,12 @@ kubectl apply -f manifests/daemonset.yaml
 sudo apt update 
 sudo apt install -y golang-1
 ```
+
+
+### 依赖整理
+```shell
+ go mod tidy
+ go build ./cmd
+```
+
+

@@ -18,13 +18,35 @@ func main() {
 	klog.InitFlags(nil)
 	defer klog.Flush()
 
+	// 获取环境变量设置
+	simulate := os.Getenv("SIMULATE")
+	klog.Infof("Running in simulation mode: %s", simulate)
+
 	// 初始化设备管理器
-	managers := []struct {
+	var managers []struct {
 		vendor  string
 		manager device.DeviceManager
-	}{
-		{"nvidia", &device.NVIDIAManager{}},
-		{"huawei", &device.HuaweiManager{}},
+	}
+
+	// 添加模拟管理器
+	if simulate != "" {
+		managers = append(managers, struct {
+			vendor  string
+			manager device.DeviceManager
+		}{
+			vendor:  "simulator",
+			manager: &device.NVIDIAManager{},
+		})
+	} else {
+		// 真实环境下的设备管理器
+		managers = append(managers, struct {
+			vendor  string
+			manager device.DeviceManager
+		}{"nvidia", &device.NVIDIAManager{}})
+		managers = append(managers, struct {
+			vendor  string
+			manager device.DeviceManager
+		}{"huawei", &device.HuaweiManager{}})
 	}
 
 	var servers []*deviceplugin.DevicePluginServer

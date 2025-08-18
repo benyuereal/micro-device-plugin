@@ -1,28 +1,33 @@
-# 构建阶段
+# 基础构建阶段
 FROM golang:1.19-alpine AS builder
 WORKDIR /app
 COPY . .
 RUN go build -o micro-device-plugin ./cmd
 
-# 运行时镜像
+# 最终运行时镜像
 FROM ubuntu:22.04
+
 LABEL maintainer="benyuereal"
 
-# 安装基础工具
-RUN apt-get update && apt-get install -y \
+# 安装基础工具和通用依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     kmod \
-    libcuda1 \
+    ca-certificates \
+    # NVIDIA 工具包（确保有nvidia-smi）
     nvidia-utils-525 \
-    huawei-npu-toolkit \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制程序二进制文件
+# 华为 NPU 工具包（在实际环境中需要替换为具体依赖）
+# RUN if [ "$GPU_VENDOR" = "huawei" ]; then \
+#        apt-get update && apt-get install -y huawei-npu-toolkit; \
+#    fi
+
+# 复制应用二进制文件
 COPY --from=builder /app/micro-device-plugin /usr/bin/
 
-# 设置健康检查
+# 健康检查
 HEALTHCHECK --interval=30s --timeout=10s \
   CMD curl -f http://localhost:8080/health || exit 1
 
-# 启动命令
 ENTRYPOINT ["/usr/bin/micro-device-plugin"]

@@ -22,7 +22,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: plugin
-          image: benyuereal/micro-device-plugin:v1.0.0
+          image: binyue/micro-device-plugin:v2
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true

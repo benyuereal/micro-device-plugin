@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: micro-device-plugin
+  namespace: kube-system
+  labels:
+    app: device-plugin
+spec:
+  selector:
+    matchLabels:
+      name: micro-device-plugin
+  template:
+    metadata:
+      labels:
+        name: micro-device-plugin
+    spec:
+      hostNetwork: true
+      containers:
+        - name: plugin
+          image: benyuereal/micro-device-plugin:v1.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: true
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev-dir
+              mountPath: /dev
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      nodeSelector:
+        # 可根据实际情况选择节点
+        gpu: "true"
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+            type: DirectoryOrCreate
+        - name: dev-dir
+          hostPath:
+            path: /dev

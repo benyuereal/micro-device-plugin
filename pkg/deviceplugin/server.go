@@ -37,7 +37,7 @@ type DevicePluginServer struct {
 func New(vendor string, manager device.DeviceManager) *DevicePluginServer {
 	return &DevicePluginServer{
 		vendor:     vendor,
-		resource:   vendor + ".com/gpu",
+		resource:   vendor + ".com/vgpu",
 		socket:     path.Join(pluginapi.DevicePluginPath, socketPrefix+"."+vendor),
 		stop:       make(chan struct{}),
 		healthChan: make(chan string, 1),

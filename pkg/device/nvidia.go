@@ -1,6 +1,7 @@
 package device
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -23,17 +24,41 @@ type NVIDIAManager struct {
 	discoverySync sync.Mutex
 }
 
+// 获取nvidia-smi的路径 - 使用新的挂载点
+func getNvidiaSmiPath() string {
+	// 优先使用环境变量指定的路径
+	if customPath := os.Getenv("NVIDIA_SMI_PATH"); customPath != "" {
+		return customPath
+	}
+	// 默认使用新的挂载路径
+	return "/host-driver/nvidia-smi"
+}
+
+// 确保命令使用正确的库路径
+func runNvidiaSmiCommand(args ...string) ([]byte, error) {
+	cmd := exec.Command(getNvidiaSmiPath(), args...)
+
+	// 设置关键环境变量 - 优先使用容器内库
+	cmd.Env = append(os.Environ(),
+		"LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/host-lib",
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	)
+
+	// 执行并返回结果
+	return cmd.CombinedOutput()
+}
+
 func (m *NVIDIAManager) DiscoverGPUs() ([]GPUDevice, error) {
 	m.discoverySync.Lock()
 	defer m.discoverySync.Unlock()
 
-	// 如果最近已经发现过设备，则使用缓存
+	// 使用缓存机制
 	if time.Since(m.lastDiscovery) < 5*time.Minute && m.devices != nil {
 		return m.devices, nil
 	}
 
-	// 执行nvidia-smi发现设备
-	out, err := exec.Command("nvidia-smi", "-L").Output()
+	// 使用新的命令执行方式
+	out, err := runNvidiaSmiCommand("-L")
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +76,7 @@ func (m *NVIDIAManager) DiscoverGPUs() ([]GPUDevice, error) {
 		id := strings.TrimPrefix(strings.Trim(parts[1], ":"), "GPU")
 		devices = append(devices, &NVIDIADevice{
 			id:      id,
-			healthy: true, // 初始状态设为健康，后续检查更新
+			healthy: true,
 		})
 	}
 
@@ -61,9 +86,8 @@ func (m *NVIDIAManager) DiscoverGPUs() ([]GPUDevice, error) {
 }
 
 func (m *NVIDIAManager) CheckHealth(deviceID string) bool {
-	// 简单的健康检查：尝试与设备通信
-	cmd := exec.Command("nvidia-smi", "-i", deviceID, "--query-gpu=health", "--format=csv,noheader")
-	out, err := cmd.CombinedOutput()
+	// 使用新的命令执行方式
+	out, err := runNvidiaSmiCommand("-i", deviceID, "--query-gpu=health", "--format=csv,noheader")
 	if err != nil {
 		return false
 	}

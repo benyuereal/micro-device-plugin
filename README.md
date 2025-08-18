@@ -49,7 +49,7 @@ kubectl delete pod -l app=micro-device-plugin -n kube-system
 ### 登陆到容器里面
 ```shell
 
-kubectl exec -it micro-device-plugin-lbt4q n -n kube-system -- sh
+kubectl exec -it micro-device-plugin-8s7th n -n kube-system -- sh
 ```
 
 

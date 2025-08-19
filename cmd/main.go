@@ -42,7 +42,7 @@ func main() {
 		managers = append(managers, struct {
 			vendor  string
 			manager device.DeviceManager
-		}{"nvidia", &device.NVIDIAManager{}})
+		}{"nvidia", device.NewNVIDIAManager()})
 		managers = append(managers, struct {
 			vendor  string
 			manager device.DeviceManager

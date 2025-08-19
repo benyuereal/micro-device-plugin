@@ -249,7 +249,7 @@ func NewMIGManager() *MIGManager {
 
 func (m *MIGManager) Configure() {
 
-	klog.Info("MIG configuration is process ..")
+	klog.Info("MIG configuration is in process ")
 
 	if !m.enabled {
 		klog.Info("MIG configuration is disabled")
@@ -264,6 +264,12 @@ func (m *MIGManager) Configure() {
 		return
 	} else if !supported {
 		klog.Warning("MIG is not supported on this device. Skipping MIG configuration.")
+		return
+	}
+
+	// 1. 启用MIG模式
+	if err := m.enableMIGMode(); err != nil {
+		klog.Errorf("Failed to enable MIG mode: %v", err)
 		return
 	}
 

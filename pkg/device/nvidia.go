@@ -1,6 +1,7 @@
 package device
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -217,6 +218,8 @@ type MIGManager struct {
 	enabled        bool
 	profile        string
 	skipConfigured bool
+	instanceCount  int    // 每个GPU上要创建的实例数
+	gpuMemory      uint64 // GPU显存大小(MB)
 }
 
 func NewMIGManager() *MIGManager {
@@ -228,10 +231,19 @@ func NewMIGManager() *MIGManager {
 
 	skipConfigured := os.Getenv("SKIP_CONFIGURED") == "true"
 
+	// 读取实例数量配置
+	instanceCount := 0 // 0表示自动计算
+	if countStr := os.Getenv("MIG_INSTANCE_COUNT"); countStr != "" {
+		if count, err := strconv.Atoi(countStr); err == nil {
+			instanceCount = count
+		}
+	}
+
 	return &MIGManager{
 		enabled:        enabled,
 		profile:        profile,
 		skipConfigured: skipConfigured,
+		instanceCount:  instanceCount,
 	}
 }
 
@@ -262,6 +274,45 @@ func (m *MIGManager) enableMIGMode() error {
 	}
 	klog.V(4).Infof("MIG enable output: %s", string(out))
 	return nil
+}
+
+// 获取GPU显存大小
+func (m *MIGManager) getGPUMemory(gpuIndex string) (uint64, error) {
+	out, err := runNvidiaSmiCommand("-i", gpuIndex, "--query-gpu=memory.total", "--format=csv,noheader,nounits")
+	if err != nil {
+		return 0, err
+	}
+
+	memoryStr := strings.TrimSpace(string(out))
+	memoryMB, err := strconv.ParseUint(memoryStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse GPU memory: %v", err)
+	}
+
+	return memoryMB, nil
+}
+
+// 从profile中提取显存需求 (GB)
+func (m *MIGManager) getProfileMemoryReq() uint64 {
+	parts := strings.Split(m.profile, ".")
+	if len(parts) < 2 {
+		return 0
+	}
+
+	memPart := parts[1]
+	if strings.HasSuffix(memPart, "gb") {
+		memPart = strings.TrimSuffix(memPart, "gb")
+	} else if strings.HasSuffix(memPart, "g") {
+		memPart = strings.TrimSuffix(memPart, "g")
+	}
+
+	memGB, err := strconv.ParseUint(memPart, 10, 64)
+	if err != nil {
+		klog.Warningf("Failed to parse memory requirement from profile %s: %v", m.profile, err)
+		return 0
+	}
+
+	return memGB * 1024 // 转换为MB
 }
 
 func (m *MIGManager) createMIGDevices() error {
@@ -305,17 +356,65 @@ func (m *MIGManager) createMIGDevices() error {
 			continue
 		}
 
-		// 跳过已有配置的设备
+		// 如果已有设备且不跳过，先销毁现有设备
 		if count > 0 {
-			klog.Infof("GPU %s already has %d MIG devices, skipping creation", index, count)
+			klog.Infof("Destroying existing MIG devices on GPU %s", index)
+			if _, err := runNvidiaSmiCommand("mig", "-i", index, "-dci"); err != nil {
+				klog.Errorf("Failed to destroy compute instances on GPU %s: %v", index, err)
+			}
+			if _, err := runNvidiaSmiCommand("mig", "-i", index, "-dgi"); err != nil {
+				klog.Errorf("Failed to destroy GPU instances on GPU %s: %v", index, err)
+			}
+			time.Sleep(2 * time.Second) // 等待资源释放
+		}
+
+		// 获取GPU显存大小
+		totalMemory, err := m.getGPUMemory(index)
+		if err != nil {
+			klog.Errorf("Failed to get GPU memory for %s: %v", index, err)
 			continue
 		}
 
-		// 应用最优切分策略
-		if _, err := runNvidiaSmiCommand("-i", index, "--create-gpu-instance", m.profile); err != nil {
-			klog.Errorf("Failed to create GPU instance (%s) on GPU %s: %v", m.profile, index, err)
-		} else {
-			klog.Infof("Created GPU instance (%s) on GPU %s", m.profile, index)
+		// 计算最大可创建实例数
+		profileMem := m.getProfileMemoryReq()
+		maxInstances := 0
+
+		if profileMem > 0 {
+			maxInstances = int(totalMemory / profileMem)
+			if maxInstances == 0 {
+				klog.Warningf("GPU %s has insufficient memory (%dMB) for profile %s (%dMB required)",
+					index, totalMemory, m.profile, profileMem)
+				continue
+			}
+		}
+
+		// 确定要创建的实例数量
+		createCount := maxInstances
+		if m.instanceCount > 0 {
+			if m.instanceCount > maxInstances {
+				klog.Warningf("Requested %d instances exceeds maximum %d for GPU %s",
+					m.instanceCount, maxInstances, index)
+				createCount = maxInstances
+			} else {
+				createCount = m.instanceCount
+			}
+		}
+
+		if createCount == 0 {
+			klog.Errorf("Cannot determine instance count for GPU %s", index)
+			continue
+		}
+
+		klog.Infof("Creating %d MIG device(s) with profile %s on GPU %s", createCount, m.profile, index)
+
+		// 创建指定数量的MIG设备
+		for i := 0; i < createCount; i++ {
+			_, err := runNvidiaSmiCommand("-i", index, "--create-gpu-instance", m.profile)
+			if err != nil {
+				klog.Errorf("Failed to create MIG device #%d on GPU %s: %v", i+1, index, err)
+				break
+			}
+			klog.Infof("Successfully created MIG device #%d on GPU %s", i+1, index)
 		}
 	}
 

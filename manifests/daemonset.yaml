@@ -42,6 +42,10 @@ spec:
             # 设置切分策略（默认3g.20gb）
             - name: MIG_PROFILE
               value: "3g.20gb"
+            # 新增实例数量配置 (可选)
+            - name: MIG_INSTANCE_COUNT
+              value: "2"   # 显式指定创建4个实例
+
             # 是否跳过已切分的设备
             - name: SKIP_CONFIGURED
               value: "true"

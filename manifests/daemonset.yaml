@@ -59,9 +59,7 @@ spec:
               subPath: nvidia-smi
             - name: nvidia-lib
               mountPath: /host-lib
-            # 添加MIG配置文件
-            - name: mig-config
-              mountPath: /etc/nvidia-mig
+
       volumes:
         - name: device-plugin
           hostPath:
@@ -76,7 +74,3 @@ spec:
         - name: nvidia-lib
           hostPath:
             path: /usr/lib/x86_64-linux-gnu
-        # MIG配置文件
-        - name: mig-config
-          configMap:
-            name: mig-config

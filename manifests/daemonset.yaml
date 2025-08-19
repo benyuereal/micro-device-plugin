@@ -39,6 +39,12 @@ spec:
             # 启用MIG配置
             - name: ENABLE_MIG
               value: "true"
+            # 设置切分策略（默认3g.20gb）
+            - name: MIG_PROFILE
+              value: "3g.20gb"
+            # 是否跳过已切分的设备
+            - name: SKIP_CONFIGURED
+              value: "true"
           volumeMounts:
             - name: device-plugin
               mountPath: /var/lib/kubelet/device-plugins

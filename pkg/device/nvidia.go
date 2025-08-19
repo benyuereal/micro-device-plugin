@@ -17,6 +17,7 @@ type NVIDIADevice struct {
 	deviceIndex string // 系统设备索引
 	physicalID  string // 物理GPU ID
 	migEnabled  bool   // 是否为MIG设备
+	profile     string // MIG配置类型
 	healthy     bool
 }
 
@@ -26,6 +27,7 @@ func (d *NVIDIADevice) GetVendor() string  { return "nvidia" }
 func (d *NVIDIADevice) GetPath() string    { return "/dev/nvidia" + d.deviceIndex }
 func (d *NVIDIADevice) IsMIG() bool        { return d.migEnabled }
 func (d *NVIDIADevice) PhysicalID() string { return d.physicalID }
+func (d *NVIDIADevice) Profile() string    { return d.profile }
 
 type NVIDIAManager struct {
 	lastDiscovery time.Time
@@ -134,7 +136,8 @@ func (m *NVIDIAManager) DiscoverGPUs() ([]GPUDevice, error) {
 	klog.Infof("Discovered %d NVIDIA devices", len(devices))
 	for _, d := range devices {
 		nvDevice := d.(*NVIDIADevice)
-		klog.Infof("NVIDIA Device: ID=%s, Index=%s, MIG=%v", nvDevice.ID(), nvDevice.deviceIndex, nvDevice.IsMIG())
+		klog.Infof("NVIDIA Device: ID=%s, Index=%s, MIG=%v, Profile=%s",
+			nvDevice.ID(), nvDevice.deviceIndex, nvDevice.IsMIG(), nvDevice.Profile())
 	}
 
 	m.devices = devices
@@ -147,7 +150,7 @@ func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error)
 	var devices []GPUDevice
 
 	// 查询GPU上的MIG设备
-	out, err := runNvidiaSmiCommand("-i", gpuIndex, "--query-mig=index,gpu_instance_id,compute_instance_id", "--format=csv,noheader")
+	out, err := runNvidiaSmiCommand("-i", gpuIndex, "--query-mig=index,gpu_instance_id,compute_instance_id,profile_name", "--format=csv,noheader")
 	if err != nil {
 		return nil, err
 	}
@@ -155,15 +158,12 @@ func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error)
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	for _, line := range lines {
 		fields := strings.Split(line, ",")
-		if len(fields) < 3 {
+		if len(fields) < 4 {
 			continue
 		}
 
 		migIndex := strings.TrimSpace(fields[0])
-
-		// 忽略不需要的字段
-		_ = strings.TrimSpace(fields[1]) // gpu_instance_id
-		_ = strings.TrimSpace(fields[2]) // compute_instance_id
+		profile := strings.TrimSpace(fields[3])
 
 		// 创建唯一的MIG设备ID
 		deviceID := gpuIndex + "-" + migIndex
@@ -173,6 +173,7 @@ func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error)
 			deviceIndex: migIndex,
 			physicalID:  gpuIndex,
 			migEnabled:  true,
+			profile:     profile,
 			healthy:     true,
 		}
 		devices = append(devices, device)
@@ -224,12 +225,24 @@ func (m *NVIDIAManager) ConfigureMIG() {
 
 // MIG管理器
 type MIGManager struct {
-	enabled bool
+	enabled        bool
+	profile        string
+	skipConfigured bool
 }
 
 func NewMIGManager() *MIGManager {
+	enabled := os.Getenv("ENABLE_MIG") == "true"
+	profile := os.Getenv("MIG_PROFILE")
+	if profile == "" {
+		profile = "3g.20gb" // 默认20GB切分策略
+	}
+
+	skipConfigured := os.Getenv("SKIP_CONFIGURED") == "true"
+
 	return &MIGManager{
-		enabled: os.Getenv("ENABLE_MIG") == "true",
+		enabled:        enabled,
+		profile:        profile,
+		skipConfigured: skipConfigured,
 	}
 }
 
@@ -239,7 +252,7 @@ func (m *MIGManager) Configure() {
 		return
 	}
 
-	klog.Info("Starting MIG configuration")
+	klog.Infof("Starting MIG configuration with profile: %s", m.profile)
 
 	// 1. 启用MIG模式
 	if err := m.enableMIGMode(); err != nil {
@@ -278,42 +291,49 @@ func (m *MIGManager) createMIGDevices() error {
 			continue
 		}
 
-		if strings.TrimSpace(string(out)) == "Enabled" {
+		currentMode := strings.TrimSpace(string(out))
+		if currentMode != "Enabled" {
+			// 启用MIG模式
+			if _, err := runMIGCommand("-i", index, "--enable-mig"); err != nil {
+				klog.Errorf("Failed to enable MIG for GPU %s: %v", index, err)
+				continue
+			}
+			klog.Infof("Enabled MIG mode for GPU %s", index)
+		} else {
 			klog.Infof("GPU %s already in MIG mode", index)
-			continue
 		}
 
-		// 启用MIG模式
-		if _, err := runMIGCommand("-i", index, "--enable-mig"); err != nil {
-			klog.Errorf("Failed to enable MIG for GPU %s: %v", index, err)
-			continue
-		}
-
-		klog.Infof("Enabled MIG mode for GPU %s", index)
-
-		// 检查现有MIG设备数量
+		// 检查现有MIG设备
 		count, err := m.getMIGDeviceCount(index)
-		if err == nil && count > 0 {
+		if err != nil {
+			klog.Errorf("Failed to get MIG device count for GPU %s: %v", index, err)
+			continue
+		}
+
+		// 如果已切分且配置跳过，则跳过创建
+		if count > 0 && m.skipConfigured {
+			klog.Infof("Skipping GPU %s (already has %d MIG devices)", index, count)
+			continue
+		}
+
+		// 跳过已有配置的设备
+		if count > 0 {
 			klog.Infof("GPU %s already has %d MIG devices, skipping creation", index, count)
 			continue
 		}
 
-		// 创建4个5GB实例
-		for i := 0; i < 4; i++ {
-			if _, err := runMIGCommand("-i", index, "--create-gpu-instance", "1g.5gb"); err != nil {
-				klog.Errorf("Failed to create GPU instance (#%d) on GPU %s: %v", i+1, index, err)
-			} else {
-				klog.Infof("Created GPU instance (#%d) on GPU %s", i+1, index)
-			}
-			time.Sleep(2 * time.Second) // 添加延迟避免冲突
+		// 应用最优切分策略
+		if _, err := runMIGCommand("-i", index, "--create-gpu-instance", m.profile); err != nil {
+			klog.Errorf("Failed to create GPU instance (%s) on GPU %s: %v", m.profile, index, err)
+		} else {
+			klog.Infof("Created GPU instance (%s) on GPU %s", m.profile, index)
 		}
-
 	}
 
 	return nil
 }
 
-// 新增：获取当前MIG设备数量
+// 获取当前MIG设备数量
 func (m *MIGManager) getMIGDeviceCount(gpuIndex string) (int, error) {
 	out, err := runNvidiaSmiCommand("-i", gpuIndex, "--query-mig=count", "--format=csv,noheader")
 	if err != nil {

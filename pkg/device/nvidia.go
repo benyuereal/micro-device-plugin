@@ -65,17 +65,6 @@ func runNvidiaSmiCommand(args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
-// 执行MIG管理命令
-func runMIGCommand(args ...string) ([]byte, error) {
-	cmd := exec.Command("nvidia-smi", args...)
-	cmd.Env = append(os.Environ(),
-		"LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/host-lib",
-		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-	)
-	klog.V(5).Infof("Executing MIG command: %v", cmd.Args)
-	return cmd.CombinedOutput()
-}
-
 func (m *NVIDIAManager) DiscoverGPUs() ([]GPUDevice, error) {
 	m.discoverySync.Lock()
 	defer m.discoverySync.Unlock()
@@ -267,7 +256,7 @@ func (m *MIGManager) Configure() {
 }
 
 func (m *MIGManager) enableMIGMode() error {
-	out, err := runMIGCommand("--enable-mig")
+	out, err := runNvidiaSmiCommand("--enable-mig")
 	if err != nil {
 		return err
 	}
@@ -294,7 +283,7 @@ func (m *MIGManager) createMIGDevices() error {
 		currentMode := strings.TrimSpace(string(out))
 		if currentMode != "Enabled" {
 			// 启用MIG模式
-			if _, err := runMIGCommand("-i", index, "--enable-mig"); err != nil {
+			if _, err := runNvidiaSmiCommand("-i", index, "--enable-mig"); err != nil {
 				klog.Errorf("Failed to enable MIG for GPU %s: %v", index, err)
 				continue
 			}
@@ -323,7 +312,7 @@ func (m *MIGManager) createMIGDevices() error {
 		}
 
 		// 应用最优切分策略
-		if _, err := runMIGCommand("-i", index, "--create-gpu-instance", m.profile); err != nil {
+		if _, err := runNvidiaSmiCommand("-i", index, "--create-gpu-instance", m.profile); err != nil {
 			klog.Errorf("Failed to create GPU instance (%s) on GPU %s: %v", m.profile, index, err)
 		} else {
 			klog.Infof("Created GPU instance (%s) on GPU %s", m.profile, index)

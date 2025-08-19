@@ -6,6 +6,8 @@ type GPUDevice interface {
 	IsHealthy() bool
 	GetVendor() string
 	GetPath() string
+	IsMIG() bool        // 新增：是否为MIG设备
+	PhysicalID() string // 新增：物理GPU ID
 }
 
 // DeviceManager 设备管理器接口
@@ -17,6 +19,14 @@ type DeviceManager interface {
 type SimulatorDevice struct {
 	id      string
 	healthy bool
+}
+
+func (d *SimulatorDevice) IsMIG() bool {
+	return false
+}
+
+func (d *SimulatorDevice) PhysicalID() string {
+	return d.id
 }
 
 func (d *SimulatorDevice) ID() string        { return d.id }

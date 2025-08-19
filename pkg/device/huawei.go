@@ -12,6 +12,14 @@ type HuaweiDevice struct {
 	healthy bool
 }
 
+func (d *HuaweiDevice) IsMIG() bool {
+	return false
+}
+
+func (d *HuaweiDevice) PhysicalID() string {
+	return d.id
+}
+
 func (d *HuaweiDevice) ID() string        { return d.id }
 func (d *HuaweiDevice) IsHealthy() bool   { return d.healthy }
 func (d *HuaweiDevice) GetVendor() string { return "huawei" }

@@ -21,7 +21,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: plugin
-          image: binyue/micro-device-plugin:v1.0.7
+          image: binyue/micro-device-plugin:v1.0.8 # 更新版本
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
@@ -34,20 +34,24 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            # 新增环境变量 - 关键修复
             - name: LD_LIBRARY_PATH
               value: /usr/lib/x86_64-linux-gnu:/host-lib
+            # 启用MIG配置
+            - name: ENABLE_MIG
+              value: "true"
           volumeMounts:
             - name: device-plugin
               mountPath: /var/lib/kubelet/device-plugins
             - name: dev
               mountPath: /dev
-            # 修改挂载点 - 避免覆盖系统路径
             - name: nvidia-bin
               mountPath: /host-driver/nvidia-smi
               subPath: nvidia-smi
             - name: nvidia-lib
               mountPath: /host-lib
+            # 添加MIG配置文件
+            - name: mig-config
+              mountPath: /etc/nvidia-mig
       volumes:
         - name: device-plugin
           hostPath:
@@ -62,3 +66,7 @@ spec:
         - name: nvidia-lib
           hostPath:
             path: /usr/lib/x86_64-linux-gnu
+        # MIG配置文件
+        - name: mig-config
+          configMap:
+            name: mig-config

@@ -201,6 +201,11 @@ func (s *DevicePluginServer) GetPreferredAllocation(ctx context.Context, req *pl
 func (s *DevicePluginServer) Start() error {
 	klog.Infof("Starting %s device plugin", s.vendor)
 
+	// 如果是NVIDIA设备，配置MIG
+	if nvidiaManager, ok := s.manager.(*device.NVIDIAManager); ok {
+		nvidiaManager.ConfigureMIG()
+	}
+
 	// 确保插件目录存在
 	if err := os.MkdirAll(pluginapi.DevicePluginPath, 0755); err != nil {
 		klog.Errorf("Failed to create device plugin directory: %v", err)

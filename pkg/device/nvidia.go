@@ -255,6 +255,15 @@ func (m *MIGManager) Configure() {
 
 	klog.Infof("Starting MIG configuration with profile: %s", m.profile)
 
+	// 检查设备是否支持MIG
+	if supported, err := m.isMigSupported(); err != nil {
+		klog.Errorf("Failed to check MIG support: %v", err)
+		return
+	} else if !supported {
+		klog.Warning("MIG is not supported on this device. Skipping MIG configuration.")
+		return
+	}
+
 	// 1. 启用MIG模式
 	if err := m.enableMIGMode(); err != nil {
 		klog.Errorf("Failed to enable MIG mode: %v", err)
@@ -265,6 +274,40 @@ func (m *MIGManager) Configure() {
 	if err := m.createMIGDevices(); err != nil {
 		klog.Errorf("Failed to create MIG devices: %v", err)
 	}
+}
+
+// 检查设备是否支持MIG
+func (m *MIGManager) isMigSupported() (bool, error) {
+	// 检查MIG支持状态
+	out, err := runNvidiaSmiCommand("mig", "-lgip")
+	output := strings.TrimSpace(string(out))
+
+	// 先检查特定不支持信息
+	if strings.Contains(output, "No MIG-supported devices found") {
+		klog.V(4).Info("MIG not supported: No MIG-supported devices found")
+		return false, nil
+	}
+
+	// 检查其他不支持情况
+	if strings.Contains(output, "not supported") {
+		klog.V(4).Infof("MIG not supported: %s", output)
+		return false, nil
+	}
+
+	// 处理命令错误
+	if err != nil {
+		klog.V(4).Infof("MIG command failed: %s", output)
+		return false, fmt.Errorf("MIG command failed: %v", err)
+	}
+
+	// 检查有效输出（应该包含设备信息）
+	if len(output) > 0 && !strings.Contains(output, "error") {
+		klog.V(4).Infof("MIG supported devices found: %s", output)
+		return true, nil
+	}
+
+	klog.V(4).Infof("Unknown MIG support status: %s", output)
+	return false, nil
 }
 
 func (m *MIGManager) enableMIGMode() error {

@@ -559,10 +559,45 @@ func (m *MIGManager) createMIGDevices() error {
 
 // 获取当前MIG设备数量
 func (m *MIGManager) getMIGDeviceCount(gpuIndex string) (int, error) {
-	out, err := runNvidiaSmiCommand("-i", gpuIndex, "--query-mig=count", "--format=csv,noheader")
-	if err != nil {
-		return 0, err
+	out, err := runNvidiaSmiCommand("mig", "-lgi", "-i", gpuIndex)
+	output := string(out)
+
+	// 处理无 MIG 设备的情况
+	if strings.Contains(output, "No GPU instances found") ||
+		strings.Contains(output, "Not Found") ||
+		strings.Contains(output, "No devices were found") {
+		klog.Infof("No MIG instances found on GPU %s", gpuIndex)
+		return 0, nil
 	}
-	count, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	return count, err
+
+	if err != nil {
+		// 检查是否因为无设备而返回错误
+		if strings.Contains(err.Error(), "exit status 255") &&
+			(strings.Contains(output, "No GPU instances found") ||
+				strings.Contains(output, "Not Found")) {
+			klog.Infof("No MIG devices on GPU %s (ignoring error)", gpuIndex)
+			return 0, nil
+		}
+		return 0, fmt.Errorf("nvidia-smi MIG query failed: %v, output: %s", err, output)
+	}
+
+	// 解析输出中的设备计数
+	count := 0
+	lines := strings.Split(output, "\n")
+
+	// 检测表头行
+	headerFound := false
+	for _, line := range lines {
+		if strings.Contains(line, "GPU Instance ID") {
+			headerFound = true
+			continue
+		}
+
+		// 统计数据行
+		if headerFound && strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+
+	return count, nil
 }

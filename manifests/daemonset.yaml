@@ -59,6 +59,8 @@ spec:
               subPath: nvidia-smi
             - name: nvidia-lib
               mountPath: /host-lib
+            - name: dev-caps
+              mountPath: /dev/nvidia-caps
 
       volumes:
         - name: device-plugin
@@ -74,3 +76,7 @@ spec:
         - name: nvidia-lib
           hostPath:
             path: /usr/lib/x86_64-linux-gnu
+        - name: dev-caps
+          hostPath:
+            path: /dev/nvidia-caps
+            type: Directory

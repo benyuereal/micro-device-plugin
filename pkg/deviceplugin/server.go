@@ -133,11 +133,24 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 	for _, containerReq := range req.ContainerRequests {
 		containerResp := new(pluginapi.ContainerAllocateResponse)
-
+		hasMIGDevice := false // 标记是否包含MIG设备
 		// 收集所有请求的设备ID
 		var deviceIDs []string
 		for _, id := range containerReq.DevicesIDs {
+			// 挂载物理GPU设备（如/dev/nvidia0）
+			// 检测是否为MIG设备
+			if s.isMIGDevice(id) {
+				hasMIGDevice = true
+			}
 			deviceIDs = append(deviceIDs, id)
+		}
+		// 为MIG设备添加专用挂载
+		if hasMIGDevice {
+			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+				HostPath:      "/dev/nvidia-caps",
+				ContainerPath: "/dev/nvidia-caps",
+				Permissions:   "rw",
+			})
 		}
 
 		klog.Infof("Allocating devices for container: %v", deviceIDs)
@@ -182,6 +195,16 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 	klog.Infof("Allocation successful for %s", s.resource)
 	return &response, nil
+}
+
+func (s *DevicePluginServer) isMIGDevice(id string) bool {
+	devices, _ := s.manager.DiscoverGPUs()
+	for _, d := range devices {
+		if d.ID() == id && d.IsMIG() {
+			return true
+		}
+	}
+	return false
 }
 
 // GetDevicePluginOptions 插件选项

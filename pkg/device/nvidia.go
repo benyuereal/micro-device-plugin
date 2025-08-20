@@ -22,10 +22,18 @@ type NVIDIADevice struct {
 	healthy     bool
 }
 
-func (d *NVIDIADevice) ID() string         { return d.id }
-func (d *NVIDIADevice) IsHealthy() bool    { return d.healthy }
-func (d *NVIDIADevice) GetVendor() string  { return "nvidia" }
-func (d *NVIDIADevice) GetPath() string    { return "/dev/nvidia" + d.deviceIndex }
+func (d *NVIDIADevice) ID() string        { return d.id }
+func (d *NVIDIADevice) IsHealthy() bool   { return d.healthy }
+func (d *NVIDIADevice) GetVendor() string { return "nvidia" }
+
+// device/nvidia.go
+func (d *NVIDIADevice) GetPath() string {
+	if d.migEnabled {
+		// MIG设备使用物理GPU的路径（如/dev/nvidia0）
+		return "/dev/nvidia" + d.physicalID
+	}
+	return "/dev/nvidia" + d.deviceIndex
+}
 func (d *NVIDIADevice) IsMIG() bool        { return d.migEnabled }
 func (d *NVIDIADevice) PhysicalID() string { return d.physicalID }
 func (d *NVIDIADevice) Profile() string    { return d.profile }

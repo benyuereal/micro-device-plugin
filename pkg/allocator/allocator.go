@@ -12,6 +12,7 @@ type Allocator interface {
 	Allocate(ids []string) error
 	Deallocate(ids []string)
 	GetAllocatedDevices() []string
+	CleanupOrphanedDevices(map[string]bool)
 }
 
 // SimpleAllocator 简单的内存分配器实现
@@ -70,6 +71,17 @@ func (a *SimpleAllocator) GetAllocatedDevices() []string {
 		devices = append(devices, id)
 	}
 	return devices
+}
+func (a *SimpleAllocator) CleanupOrphanedDevices(discoveredIDs map[string]bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	for id := range a.allocated {
+		if !discoveredIDs[id] {
+			delete(a.allocated, id)
+			klog.Warningf("Cleaned orphaned device: %s", id)
+		}
+	}
 }
 
 // 错误定义

@@ -86,6 +86,12 @@ func (s *DevicePluginServer) updateDeviceList(stream pluginapi.DevicePlugin_List
 		klog.Errorf("Failed to discover devices: %v", err)
 		return fmt.Errorf("failed to discover devices: %v", err)
 	}
+	// 新增：清理已消失设备的分配状态
+	discoveredIDs := make(map[string]bool)
+	for _, d := range devices {
+		discoveredIDs[d.ID()] = true
+	}
+	s.allocator.CleanupOrphanedDevices(discoveredIDs)
 
 	deviceList := make([]*pluginapi.Device, len(devices))
 	healthStatusCount := map[string]int{
@@ -253,6 +259,7 @@ func (s *DevicePluginServer) Start() error {
 	}
 
 	klog.Infof("%s device plugin started and registered with resource name %s", s.vendor, s.resource)
+	s.allocator = allocator.NewSimpleAllocator() // 确保分配器初始化
 	return nil
 }
 

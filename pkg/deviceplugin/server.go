@@ -152,6 +152,21 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 				Permissions:   "rw",
 			})
 		}
+		// 添加全局设备文件挂载
+		globalDevices := []string{
+			"/dev/nvidiactl",
+			"/dev/nvidia-uvm",
+			"/dev/nvidia-uvm-tools",
+			"/dev/nvidia-modeset",
+		}
+
+		for _, dev := range globalDevices {
+			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+				HostPath:      dev,
+				ContainerPath: dev,
+				Permissions:   "rw",
+			})
+		}
 
 		klog.Infof("Allocating devices for container: %v", deviceIDs)
 
@@ -164,6 +179,8 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		// 设置环境变量
 		containerResp.Envs = map[string]string{
 			s.resource + "_DEVICE_IDS": strings.Join(deviceIDs, ","),
+			"NVIDIA_VISIBLE_DEVICES":   strings.Join(deviceIDs, ","), // 新增
+			"CUDA_VISIBLE_DEVICES":     strings.Join(deviceIDs, ","), // 新增
 		}
 		klog.V(4).Infof("Set environment variable: %s_DEVICE_IDS=%s", s.resource, containerResp.Envs[s.resource+"_DEVICE_IDS"])
 

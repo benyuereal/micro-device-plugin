@@ -61,6 +61,10 @@ spec:
               mountPath: /host-lib
             - name: dev-caps
               mountPath: /dev/nvidia-caps
+            - name: nvidia-lib
+              mountPath: /usr/lib/x86_64-linux-gnu  # 驱动库目录
+            - name: nvidia-cuda
+              mountPath: /usr/local/cuda             # CUDA目录
 
       volumes:
         - name: device-plugin
@@ -80,3 +84,6 @@ spec:
           hostPath:
             path: /dev/nvidia-caps
             type: Directory
+        - name: nvidia-cuda
+          hostPath:
+            path: /usr/local/cuda

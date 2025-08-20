@@ -145,7 +145,7 @@ func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error)
 
 	// 处理无GPU实例的情况
 	if strings.Contains(output, "No GPU instances found") {
-		klog.V(4).Infof("No MIG GPU instances found on GPU %s", gpuIndex)
+		klog.Infof("No MIG GPU instances found on GPU %s", gpuIndex)
 		return devices, nil
 	}
 
@@ -360,12 +360,6 @@ func (m *MIGManager) Configure() {
 		return
 	} else if !supported {
 		klog.Warning("MIG is not supported on this device. Skipping MIG configuration.")
-		return
-	}
-
-	// 1. 启用MIG模式
-	if err := m.enableMIGMode(); err != nil {
-		klog.Errorf("Failed to enable MIG mode: %v", err)
 		return
 	}
 

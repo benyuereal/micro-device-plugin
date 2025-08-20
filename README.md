@@ -37,25 +37,30 @@ docker push binyue/micro-device-plugin:v1.0.11
 docker build \
   --build-arg HTTP_PROXY=http://192.168.10.159:7890 \
   --build-arg HTTPS_PROXY=http://192.168.10.159:7890 \
-  -t binyue/micro-device-plugin:v1.0.13
+  -t binyue/micro-device-plugin:v1.0.13 .
 
 
 ```
 
 ### 本地加载镜像
-#### a主机
 ```shell
-docker save -o micro-device-plugin.tar "binyue/micro-device-plugin:v1.0.11"
-scp -P 22159 micro-device-plugin.tar k8sadmin@175.155.64.171:/home/k8sadmin
+# 1. 切换到 Minikube 的 Docker 环境
+eval $(minikube docker-env)
 
+# 2. 现在所有 docker 命令都针对 Minikube 环境
+docker build \
+  --build-arg HTTP_PROXY=http://192.168.10.159:7890 \
+  --build-arg HTTPS_PROXY=http://192.168.10.159:7890 \
+  -t binyue/micro-device-plugin:v1.0.13 .
+
+# 3. 验证
+docker images | grep my-image
+
+# 4. 退出 Minikube 环境（完成后）
+eval $(minikube docker-env -u)
 ```
 
-#### b主机
 
-```shell
-minikube cp micro-device-plugin.tar /home/docker/micro-device.tar
-minikube ssh -- docker load -i /home/docker/micro-device.tar
-```
 
 ### pod 管理
 ```shell

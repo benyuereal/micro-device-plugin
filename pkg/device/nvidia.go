@@ -553,17 +553,22 @@ func (m *MIGManager) createMIGDevices() error {
 			continue
 		}
 
-		// 创建命令（使用profile ID和实际创建数量）
-		profileArg := fmt.Sprintf("%d*%d", createCount, profileID)
-		// 创建指定数量的MIG设备
+		// === 修复开始 ===
+		// 构造逗号分隔的ID列表 (e.g., "9,9" for 2 instances)
+		ids := make([]string, createCount)
 		for i := 0; i < createCount; i++ {
-			_, err := runNvidiaSmiCommand("mig", "-cgi", profileArg, "-C")
-			if err != nil {
-				klog.Errorf("Failed to create MIG device #%d on GPU %s: %v", i+1, index, err)
-				break
-			}
-			klog.Infof("Successfully created MIG device #%d on GPU %s", i+1, index)
+			ids[i] = strconv.Itoa(profileID)
 		}
+		profileArg := strings.Join(ids, ",")
+
+		// 单次执行创建命令
+		_, err = runNvidiaSmiCommand("mig", "-cgi", profileArg, "-C")
+		if err != nil {
+			klog.Errorf("Failed to create %d MIG devices on GPU %s: %v", createCount, index, err)
+		} else {
+			klog.Infof("Successfully created %d MIG devices on GPU %s", createCount, index)
+		}
+		// === 修复结束 ===
 	}
 
 	return nil

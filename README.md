@@ -68,6 +68,8 @@ kubectl get pod -n kube-system
 kubectl describe pod -l app=micro-device-plugin -n kube-system
 kubectl logs -f -l app=micro-device-plugin -n kube-system
 kubectl delete pod -l app=micro-device-plugin -n kube-system
+kubectl delete daemonset -l app=micro-device-plugin -n kube-system
+kubectl logs -l app=micro-device-plugin -n kube-system  --tail=-1
 ```
 
 

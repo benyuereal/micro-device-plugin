@@ -575,19 +575,30 @@ func getProfileID(profileName string) (int, error) {
 		return 0, err
 	}
 
+	// 正则表达式匹配profile行
+	re := regexp.MustCompile(`\|\s+\d+\s+MIG\s+(\S+)\s+(\d+)`)
+
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	for _, line := range lines {
-		klog.Infof("Processing line %s", line)
-		// 使用正则表达式匹配包含 profile 名称的行
-		if strings.Contains(line, "MIG") && strings.Contains(line, profileName) {
-			// 提取数字 ID（行中的第一个数字字段）
-			fields := strings.Fields(line)
-			if len(fields) > 0 {
-				profileID, err := strconv.Atoi(fields[2])
-				if err == nil {
-					klog.Infof("Found profile %s with ID %d", profileName, profileID)
-					return profileID, nil
+		klog.Infof("Found line %s", line)
+		// 跳过非profile行（表格线、标题等）
+		if !strings.Contains(line, "MIG") || !strings.Contains(line, "|") {
+			continue
+		}
+
+		matches := re.FindStringSubmatch(line)
+		if len(matches) > 2 {
+			name := matches[1]
+			idStr := matches[2]
+
+			if name == profileName {
+				profileID, err := strconv.Atoi(idStr)
+				if err != nil {
+					klog.Warningf("Invalid profile ID format: %s", idStr)
+					continue
 				}
+				klog.Infof("Found profile %s with ID %d", profileName, profileID)
+				return profileID, nil
 			}
 		}
 	}

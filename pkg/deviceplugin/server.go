@@ -174,6 +174,7 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			for _, d := range devices {
 				if d.ID() == id {
 					devicePath = d.GetPath()
+					klog.Infof("Device %s is on GPU %s", d.ID(), devicePath)
 					break
 				}
 			}
@@ -184,7 +185,7 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 					ContainerPath: devicePath,
 					Permissions:   "rw",
 				})
-				klog.V(4).Infof("Adding device mount for %s: %s", id, devicePath)
+				klog.Infof("Adding device mount for %s: %s", id, devicePath)
 			} else {
 				klog.Warningf("Device path not found for device ID: %s", id)
 			}

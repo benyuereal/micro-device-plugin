@@ -62,7 +62,7 @@ func runNvidiaSmiCommand(args ...string) ([]byte, error) {
 		"LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/host-lib",
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	)
-	klog.V(5).Infof("Executing NVIDIA-SMI command: %v", cmd.Args)
+	klog.Infof("Executing NVIDIA-SMI command: %v", cmd.Args)
 	return cmd.CombinedOutput()
 }
 
@@ -451,6 +451,10 @@ func (m *MIGManager) getProfileMemoryReq() uint64 {
 	return memGB * 1024 // 转换为MB
 }
 
+/*
+*
+https://docs.nvidia.com/datacenter/tesla/mig-user-guide/index.html
+*/
 func (m *MIGManager) createMIGDevices() error {
 	// 获取GPU列表
 	out, err := runNvidiaSmiCommand("--query-gpu=index", "--format=csv,noheader")
@@ -545,7 +549,7 @@ func (m *MIGManager) createMIGDevices() error {
 
 		// 创建指定数量的MIG设备
 		for i := 0; i < createCount; i++ {
-			_, err := runNvidiaSmiCommand("-i", index, "--create-gpu-instance", m.profile)
+			_, err := runNvidiaSmiCommand("mig", "-cgi", fmt.Sprintf("%d*%s", count, m.profile), "-C")
 			if err != nil {
 				klog.Errorf("Failed to create MIG device #%d on GPU %s: %v", i+1, index, err)
 				break

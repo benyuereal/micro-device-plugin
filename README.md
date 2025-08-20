@@ -87,3 +87,14 @@ sudo nvidia-smi -i 0 -mig 1
 sudo nvidia-smi -mig 1
 ```
 
+#### mig管理
+```shell
+
+# 安装 GPU Operator
+helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+helm install --wait gpu-operator nvidia/gpu-operator \
+  --set migManager.enabled=true \
+  --set mig.strategy=mixed \
+  --set mig.default=all-3g.20gb
+```
+

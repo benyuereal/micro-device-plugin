@@ -230,6 +230,7 @@ func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error)
 				continue
 			}
 
+			klog.Infof("Found compute instance %s on GPU %s, line %a", gpuInstanceID, gpuIndex, ciLine)
 			// 提取计算实例字段
 			ciGpuIdx := ciMatches[1]          // "0"
 			ciGiID := ciMatches[2]            // "1"
@@ -253,6 +254,7 @@ func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error)
 				profile:     ciProfileName,
 				healthy:     true,
 			}
+			klog.Infof("device: %v", device)
 			devices = append(devices, device)
 			m.deviceMap[deviceID] = device
 		}

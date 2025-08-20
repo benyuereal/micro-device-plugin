@@ -169,21 +169,31 @@ func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error)
 		startIndex = 0
 	}
 
+	// 定义正则表达式（在循环外部编译）
+	giRegex := regexp.MustCompile(`\|\s*(\d+)\s+MIG\s+([\w\.]+)\s+(\d+)\s+(\d+)\s+(\S+)\s*\|`)
+	ciRegex := regexp.MustCompile(`\|\s*(\d+)\s+(\d+)\s+MIG\s+([\w\.]+)\s+(\d+)\s+(\d+)\s+(\S+)\s*\|`)
+
 	for i := startIndex; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
 			continue
 		}
 
-		// 解析GPU实例信息
-		fields := strings.Fields(line)
-		if len(fields) < 4 {
-			klog.V(5).Infof("Skipping invalid GPU instance line: %s", line)
+		// 使用正则解析GPU实例行
+		giMatches := giRegex.FindStringSubmatch(line)
+		if giMatches == nil {
+			klog.V(5).Infof("Skipping unmatchable GI line: %s", line)
 			continue
 		}
 
-		gpuInstanceID := fields[0]
-		profileID := fields[1]
+		// 提取关键字段 (注意索引从1开始)
+		gpuIdx := giMatches[1]        // "0"
+		gpuInstanceID := giMatches[4] // "1"
+
+		// 只处理当前GPU
+		if gpuIdx != gpuIndex {
+			continue
+		}
 
 		// 获取计算实例（Compute Instances）
 		ciOut, err := runNvidiaSmiCommand("mig", "-lci", "-i", gpuIndex, "-gi", gpuInstanceID)
@@ -214,30 +224,33 @@ func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error)
 				continue
 			}
 
-			ciFields := strings.Fields(ciLine)
-			if len(ciFields) < 3 { // 至少需要ID, Placement, State
-				klog.V(5).Infof("Skipping invalid compute instance line: %s", ciLine)
+			ciMatches := ciRegex.FindStringSubmatch(ciLine)
+			if ciMatches == nil {
+				klog.Infof("Skipping unmatchable CI line: %s", ciLine)
 				continue
 			}
 
-			computeInstanceID := ciFields[0]
+			// 提取计算实例字段
+			ciGpuIdx := ciMatches[1]          // "0"
+			ciGiID := ciMatches[2]            // "1"
+			ciProfileName := ciMatches[3]     // "3g.20gb"
+			computeInstanceID := ciMatches[5] // "0"
 
-			// 获取profile名称（将ID转换为可读名称）
-			profileName, err := m.getProfileName(profileID)
-			if err != nil {
-				klog.Warningf("Failed to get profile name for ID %s: %v", profileID, err)
-				profileName = "unknown"
+			// 验证属于当前GPU实例
+			if ciGpuIdx != gpuIndex || ciGiID != gpuInstanceID {
+				continue
 			}
 
 			// 创建设备ID: GPUIndex-GI-CI
 			deviceID := fmt.Sprintf("%s-GI%s-CI%s", gpuIndex, gpuInstanceID, computeInstanceID)
 
+			klog.Infof("Device ID: %s", deviceID)
 			device := &NVIDIADevice{
 				id:          deviceID,
 				deviceIndex: gpuInstanceID, // 使用GPU实例ID作为设备索引
 				physicalID:  gpuIndex,
 				migEnabled:  true,
-				profile:     profileName,
+				profile:     ciProfileName,
 				healthy:     true,
 			}
 			devices = append(devices, device)

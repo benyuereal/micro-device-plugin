@@ -29,8 +29,8 @@ func (d *NVIDIADevice) GetVendor() string { return "nvidia" }
 // device/nvidia.go
 func (d *NVIDIADevice) GetPath() string {
 	if d.migEnabled {
-		// MIG设备使用专用路径格式：/dev/nvidia-<gpu_index>-<gi_id>-<ci_id>
-		return fmt.Sprintf("/dev/nvidia-%s-%s-%s", d.physicalID, d.deviceIndex, d.profile)
+		// 生成设备节点名称（如 nvidia-cap12）
+		return fmt.Sprintf("/dev/nvidia-caps/nvidia-cap%s", d.deviceIndex)
 	}
 	return "/dev/nvidia" + d.deviceIndex
 }

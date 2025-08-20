@@ -146,11 +146,11 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		}
 		// 为MIG设备添加专用挂载
 		if hasMIGDevice {
-			//containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-			//	HostPath:      "/dev/nvidia-caps",
-			//	ContainerPath: "/dev/nvidia-caps",
-			//	Permissions:   "rw",
-			//})
+			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+				HostPath:      "/dev/nvidia-caps",
+				ContainerPath: "/dev/nvidia-caps",
+				Permissions:   "rw",
+			})
 		}
 
 		klog.Infof("Allocating devices for container: %v", deviceIDs)

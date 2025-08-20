@@ -577,7 +577,8 @@ func getProfileID(profileName string) (int, error) {
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	for _, line := range lines {
-		if strings.Contains(line, profileName) {
+		// 添加"MIG "前缀进行匹配
+		if strings.Contains(line, "MIG "+profileName) {
 			fields := strings.Fields(line)
 			if len(fields) > 0 {
 				profileID, err := strconv.Atoi(fields[0])

@@ -29,8 +29,8 @@ func (d *NVIDIADevice) GetVendor() string { return "nvidia" }
 // device/nvidia.go
 func (d *NVIDIADevice) GetPath() string {
 	if d.migEnabled {
-		// MIG设备使用物理GPU的路径（如/dev/nvidia0）
-		return "/dev/nvidia" + d.physicalID
+		// MIG设备使用专用路径格式：/dev/nvidia-<gpu_index>-<gi_id>-<ci_id>
+		return fmt.Sprintf("/dev/nvidia-%s-%s-%s", d.physicalID, d.deviceIndex, d.profile)
 	}
 	return "/dev/nvidia" + d.deviceIndex
 }

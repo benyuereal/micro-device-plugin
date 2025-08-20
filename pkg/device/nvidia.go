@@ -139,38 +139,134 @@ func (m *NVIDIAManager) DiscoverGPUs() ([]GPUDevice, error) {
 func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error) {
 	var devices []GPUDevice
 
-	// 查询GPU上的MIG设备
-	out, err := runNvidiaSmiCommand("-i", gpuIndex, "--query-mig=index,gpu_instance_id,compute_instance_id,profile_name", "--format=csv,noheader")
+	// 查询GPU实例（GPU Instances）
+	out, err := runNvidiaSmiCommand("mig", "-lgi", "-i", gpuIndex)
+	output := strings.TrimSpace(string(out))
+
+	// 处理无GPU实例的情况
+	if strings.Contains(output, "No GPU instances found") {
+		klog.V(4).Infof("No MIG GPU instances found on GPU %s", gpuIndex)
+		return devices, nil
+	}
+
 	if err != nil {
+		klog.Errorf("Failed to query GPU instances for GPU %s: %v", gpuIndex, err)
 		return nil, err
+	}
+
+	lines := strings.Split(output, "\n")
+	// 跳过表头（如果有）
+	startIndex := 0
+	for i, line := range lines {
+		if strings.Contains(line, "GPU Instance ID") {
+			startIndex = i + 1
+			break
+		}
+	}
+
+	// 如果没有找到表头，则从0开始
+	if startIndex >= len(lines) {
+		startIndex = 0
+	}
+
+	for i := startIndex; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+
+		// 解析GPU实例信息
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			klog.V(5).Infof("Skipping invalid GPU instance line: %s", line)
+			continue
+		}
+
+		gpuInstanceID := fields[0]
+		profileID := fields[1]
+
+		// 获取计算实例（Compute Instances）
+		ciOut, err := runNvidiaSmiCommand("mig", "-lci", "-i", gpuIndex, "-gi", gpuInstanceID)
+		if err != nil {
+			klog.Errorf("Failed to query compute instances for GI %s: %v", gpuInstanceID, err)
+			continue
+		}
+
+		ciOutput := strings.TrimSpace(string(ciOut))
+		// 处理无计算实例的情况
+		if strings.Contains(ciOutput, "No compute instances found") {
+			klog.V(4).Infof("No compute instances found for GPU instance %s on GPU %s", gpuInstanceID, gpuIndex)
+			continue
+		}
+
+		ciLines := strings.Split(ciOutput, "\n")
+		ciStartIndex := 0
+		for j, ciLine := range ciLines {
+			if strings.Contains(ciLine, "Compute Instance ID") {
+				ciStartIndex = j + 1
+				break
+			}
+		}
+
+		for j := ciStartIndex; j < len(ciLines); j++ {
+			ciLine := strings.TrimSpace(ciLines[j])
+			if ciLine == "" {
+				continue
+			}
+
+			ciFields := strings.Fields(ciLine)
+			if len(ciFields) < 3 { // 至少需要ID, Placement, State
+				klog.V(5).Infof("Skipping invalid compute instance line: %s", ciLine)
+				continue
+			}
+
+			computeInstanceID := ciFields[0]
+
+			// 获取profile名称（将ID转换为可读名称）
+			profileName, err := m.getProfileName(profileID)
+			if err != nil {
+				klog.Warningf("Failed to get profile name for ID %s: %v", profileID, err)
+				profileName = "unknown"
+			}
+
+			// 创建设备ID: GPUIndex-GI-CI
+			deviceID := fmt.Sprintf("%s-GI%s-CI%s", gpuIndex, gpuInstanceID, computeInstanceID)
+
+			device := &NVIDIADevice{
+				id:          deviceID,
+				deviceIndex: gpuInstanceID, // 使用GPU实例ID作为设备索引
+				physicalID:  gpuIndex,
+				migEnabled:  true,
+				profile:     profileName,
+				healthy:     true,
+			}
+			devices = append(devices, device)
+			m.deviceMap[deviceID] = device
+		}
+	}
+
+	return devices, nil
+}
+
+func (m *NVIDIAManager) getProfileName(profileID string) (string, error) {
+	// 查询所有可用profile
+	out, err := runNvidiaSmiCommand("mig", "-lgip")
+	if err != nil {
+		return "", err
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	for _, line := range lines {
-		fields := strings.Split(line, ",")
-		if len(fields) < 4 {
-			continue
+		if strings.Contains(line, profileID) {
+			// 示例行: "   19     4     4      0       1      0     0     0     0     1     0     0      0      0     0     0     0     0     0     0     0     0     0     0     0     0     0     0     0     0     0     0  1g.10gb"
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				// 最后一个字段是profile名称
+				return fields[len(fields)-1], nil
+			}
 		}
-
-		migIndex := strings.TrimSpace(fields[0])
-		profile := strings.TrimSpace(fields[3])
-
-		// 创建唯一的MIG设备ID
-		deviceID := gpuIndex + "-" + migIndex
-
-		device := &NVIDIADevice{
-			id:          deviceID,
-			deviceIndex: migIndex,
-			physicalID:  gpuIndex,
-			migEnabled:  true,
-			profile:     profile,
-			healthy:     true,
-		}
-		devices = append(devices, device)
-		m.deviceMap[deviceID] = device
 	}
-
-	return devices, nil
+	return "unknown", fmt.Errorf("profile not found for ID %s", profileID)
 }
 
 // 健康检查

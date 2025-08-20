@@ -547,9 +547,17 @@ func (m *MIGManager) createMIGDevices() error {
 
 		klog.Infof("Creating %d MIG device(s) with profile %s on GPU %s", createCount, m.profile, index)
 
+		profileID, err := getProfileID(m.profile)
+		if err != nil {
+			klog.Errorf("Failed to get profile ID: %v", err)
+			continue
+		}
+
+		// 创建命令（使用profile ID和实际创建数量）
+		profileArg := fmt.Sprintf("%d*%d", createCount, profileID)
 		// 创建指定数量的MIG设备
 		for i := 0; i < createCount; i++ {
-			_, err := runNvidiaSmiCommand("mig", "-cgi", fmt.Sprintf("%d*%s", count, m.profile), "-C")
+			_, err := runNvidiaSmiCommand("mig", "-cgi", profileArg, "-C")
 			if err != nil {
 				klog.Errorf("Failed to create MIG device #%d on GPU %s: %v", i+1, index, err)
 				break
@@ -559,6 +567,27 @@ func (m *MIGManager) createMIGDevices() error {
 	}
 
 	return nil
+}
+
+func getProfileID(profileName string) (int, error) {
+	out, err := runNvidiaSmiCommand("mig", "-lgip")
+	if err != nil {
+		return 0, err
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, profileName) {
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				profileID, err := strconv.Atoi(fields[0])
+				if err == nil {
+					return profileID, nil
+				}
+			}
+		}
+	}
+	return 0, fmt.Errorf("profile not found: %s", profileName)
 }
 
 // 获取当前MIG设备数量

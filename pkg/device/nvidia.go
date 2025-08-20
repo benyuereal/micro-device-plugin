@@ -577,14 +577,15 @@ func getProfileID(profileName string) (int, error) {
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	for _, line := range lines {
+		klog.Infof("Processing line %s", line)
 		// 使用正则表达式匹配包含 profile 名称的行
 		if strings.Contains(line, "MIG") && strings.Contains(line, profileName) {
 			// 提取数字 ID（行中的第一个数字字段）
-			re := regexp.MustCompile(`\d+`)
-			matches := re.FindAllString(line, -1)
-			if len(matches) > 0 {
-				profileID, err := strconv.Atoi(matches[0])
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				profileID, err := strconv.Atoi(fields[2])
 				if err == nil {
+					klog.Infof("Found profile %s with ID %d", profileName, profileID)
 					return profileID, nil
 				}
 			}

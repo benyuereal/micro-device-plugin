@@ -185,7 +185,7 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		envs["LD_LIBRARY_PATH"] = "/usr/local/cuda/lib64:" + cudaLibPath + ":$LD_LIBRARY_PATH"
 
 		// 设置环境变量 - 关键修改点！
-		envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(physicalIDs, ",") // 直接使用数字索引
+		envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(containerReq.DevicesIDs, ",") // 直接使用数字索引
 		envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility"
 
 		// 挂载MIG控制目录

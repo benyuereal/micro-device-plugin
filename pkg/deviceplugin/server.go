@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"strings"
 	"syscall"
 	"time"
 
@@ -184,8 +185,7 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		envs["LD_LIBRARY_PATH"] = "/usr/local/cuda/lib64:" + cudaLibPath + ":$LD_LIBRARY_PATH"
 
 		// 设置环境变量 - 关键修改点！
-		// fixme 先写死
-		envs["NVIDIA_VISIBLE_DEVICES"] = "0:1" // 直接使用数字索引
+		envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(containerReq.DevicesIDs, ",") // 直接使用数字索引
 		envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility"
 
 		// 挂载MIG控制目录
@@ -226,14 +226,17 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 		// ================= 设备挂载设置 =================
 		// 挂载物理GPU设备
-		for physID := range physicalDevices {
-			devicePath := fmt.Sprintf("/dev/nvidia%s", physID)
-			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-				HostPath:      devicePath,
-				ContainerPath: devicePath,
-				Permissions:   "rwm",
-			})
-			klog.Infof("Mounted GPU device: %s", devicePath)
+		// 禁止为MIG设备挂载物理GPU设备
+		if len(migDevices) == 0 { // 仅当无MIG设备时挂载物理设备
+			for physID := range physicalDevices {
+				devicePath := fmt.Sprintf("/dev/nvidia%s", physID)
+				containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+					HostPath:      devicePath,
+					ContainerPath: devicePath,
+					Permissions:   "rwm",
+				})
+				klog.Infof("Mounted GPU device: %s", devicePath)
+			}
 		}
 
 		// 必备控制设备挂载

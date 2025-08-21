@@ -200,15 +200,15 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		if len(migDevices) > 0 {
 
 			// 挂载具体的MIG设备文件
-			for physID := range physicalDevices {
-				capPath := fmt.Sprintf("/dev/nvidia-caps/nvidia-cap%s", physID)
-				containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-					HostPath:      capPath,
-					ContainerPath: capPath,
-					Permissions:   "rw",
-				})
-				klog.Infof("Mounted MIG cap device: %s", capPath)
-			}
+			//for physID := range physicalDevices {
+			//	capPath := fmt.Sprintf("/dev/nvidia-caps/nvidia-cap%s", physID)
+			//	containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+			//		HostPath:      capPath,
+			//		ContainerPath: capPath,
+			//		Permissions:   "rw",
+			//	})
+			//	klog.Infof("Mounted MIG cap device: %s", capPath)
+			//}
 			// 为MIG设备设置专用环境变量
 			migIDs := make([]string, 0, len(migDevices))
 			for id := range migDevices {

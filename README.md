@@ -98,5 +98,15 @@ helm install --wait gpu-operator nvidia/gpu-operator \
   --set migManager.enabled=true \
   --set mig.strategy=mixed \
   --set mig.default=all-3g.20gb
+  
+  
+  
+  
 ```
 
+#### 镜像复制
+```shell
+docker save binyue/micro-device-plugin:v1.0.13 -o micro-plugin.tar
+sudo microk8s ctr image import 
+sudo microk8s ctr images ls | grep pytorch
+```

@@ -32,7 +32,8 @@ type DevicePluginServer struct {
 	allocator       allocator.Allocator
 	manager         device.DeviceManager
 	server          *grpc.Server
-	lastDeviceState map[string]string // 使用字符串记录健康状态
+	lastDeviceState map[string]string           // 使用字符串记录健康状态
+	deviceMap       map[string]device.GPUDevice // 设备ID到设备对象的映射
 }
 
 func New(vendor string, manager device.DeviceManager) *DevicePluginServer {
@@ -45,6 +46,7 @@ func New(vendor string, manager device.DeviceManager) *DevicePluginServer {
 		manager:         manager,
 		allocator:       allocator.NewSimpleAllocator(),
 		lastDeviceState: make(map[string]string),
+		deviceMap:       make(map[string]device.GPUDevice),
 	}
 }
 
@@ -133,7 +135,8 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 	for _, containerReq := range req.ContainerRequests {
 		containerResp := new(pluginapi.ContainerAllocateResponse)
-		hasMIGDevice := false // 标记是否包含MIG设备
+		hasMIGDevice := false                    // 标记是否包含MIG设备
+		physicalDevices := make(map[string]bool) // 存储物理GPU索引
 		// 收集所有请求的设备ID
 		var deviceIDs []string
 		for _, id := range containerReq.DevicesIDs {
@@ -143,6 +146,16 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 				hasMIGDevice = true
 			}
 			deviceIDs = append(deviceIDs, id)
+			/**
+			fixme 快速测试 先写死
+			*/
+			physicalDevices["0"] = true
+
+			//if device, exists := s.deviceMap[id]; exists {
+			//	if nvDevice, ok := device.(*device.NVIDIADevice); ok {
+			//		physicalDevices[nvDevice.PhysicalID()] = true
+			//	}
+			//}
 		}
 		// 为MIG设备添加专用挂载
 		if hasMIGDevice {
@@ -151,6 +164,11 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 				ContainerPath: "/dev/nvidia-caps",
 				Permissions:   "rw",
 			})
+		}
+		// 提取物理GPU索引列表（去重）
+		var physicalIDs []string
+		for id := range physicalDevices {
+			physicalIDs = append(physicalIDs, id)
 		}
 
 		klog.Infof("Allocating devices for container: %v", deviceIDs)
@@ -166,8 +184,10 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 		// 添加 CUDA 环境变量
 		containerResp.Envs = map[string]string{
-			"CUDA_VISIBLE_DEVICES": strings.Join(deviceIDs, ","), // 标准环境变量
-			"LD_LIBRARY_PATH":      "/usr/local/cuda/lib64:" + cudaLibPath + ":$LD_LIBRARY_PATH",
+			"CUDA_VISIBLE_DEVICES":       strings.Join(physicalIDs, ","), // 使用物理GPU索引
+			"NVIDIA_VISIBLE_DEVICES":     strings.Join(physicalIDs, ","),
+			"NVIDIA_MIG_VISIBLE_DEVICES": strings.Join(containerReq.DevicesIDs, ","), // 原始MIG设备ID
+			"LD_LIBRARY_PATH":            "/usr/local/cuda/lib64:/host-lib:$LD_LIBRARY_PATH",
 		}
 
 		// 添加 CUDA 库挂载

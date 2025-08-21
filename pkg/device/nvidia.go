@@ -34,9 +34,14 @@ func (d *NVIDIADevice) GetPath() string {
 	}
 	return "/dev/nvidia" + d.deviceIndex
 }
-func (d *NVIDIADevice) IsMIG() bool        { return d.migEnabled }
-func (d *NVIDIADevice) PhysicalID() string { return d.physicalID }
-func (d *NVIDIADevice) Profile() string    { return d.profile }
+func (d *NVIDIADevice) IsMIG() bool { return d.migEnabled }
+func (d *NVIDIADevice) PhysicalID() string { // 对于MIG设备返回物理GPU索引（如"0"）
+	if d.migEnabled {
+		return d.physicalID
+	}
+	return d.deviceIndex
+}
+func (d *NVIDIADevice) Profile() string { return d.profile }
 
 type NVIDIAManager struct {
 	lastDiscovery time.Time

@@ -161,10 +161,21 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			return nil, fmt.Errorf("allocation failed: %v", err)
 		}
 
-		// 设置环境变量
+		// 添加 CUDA 库路径 (需在 DaemonSet 中定义)
+		cudaLibPath := "/host-lib" // 宿主机 CUDA 库路径
+
+		// 添加 CUDA 环境变量
 		containerResp.Envs = map[string]string{
-			s.resource + "_DEVICE_IDS": strings.Join(deviceIDs, ","),
+			"CUDA_VISIBLE_DEVICES": strings.Join(deviceIDs, ","), // 标准环境变量
+			"LD_LIBRARY_PATH":      "/usr/local/cuda/lib64:" + cudaLibPath + ":$LD_LIBRARY_PATH",
 		}
+
+		// 添加 CUDA 库挂载
+		containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
+			HostPath:      cudaLibPath,
+			ContainerPath: cudaLibPath,
+			ReadOnly:      true,
+		})
 		klog.Infof("Set environment variable: %s_DEVICE_IDS=%s", s.resource, containerResp.Envs[s.resource+"_DEVICE_IDS"])
 
 		// 添加设备挂载

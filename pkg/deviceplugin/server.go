@@ -135,65 +135,84 @@ func (s *DevicePluginServer) updateDeviceList(stream pluginapi.DevicePlugin_List
 	return stream.Send(&pluginapi.ListAndWatchResponse{Devices: deviceList})
 }
 
-// Allocate 设备分配实现
+// Allocate 设备分配实现 - 生产级MIG支持
 func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
 	klog.Infof("Received Allocate request for %s: %v", s.resource, req.ContainerRequests)
-
 	response := pluginapi.AllocateResponse{}
 
 	for _, containerReq := range req.ContainerRequests {
 		containerResp := new(pluginapi.ContainerAllocateResponse)
 		physicalDevices := make(map[string]bool) // 存储物理GPU索引
-		// 收集所有请求的设备ID
-		var deviceIDs []string
+		migDevices := make(map[string]bool)      // 存储MIG设备ID
+
+		// 收集设备信息并分类
 		for _, id := range containerReq.DevicesIDs {
-			deviceIDs = append(deviceIDs, id)
 			if dev, exists := s.deviceMap[id]; exists {
 				physicalDevices[dev.PhysicalID()] = true
 
-				klog.Infof("Device %s mapped to physical GPU %s", id, dev.PhysicalID())
+				// 标记MIG设备
+				if dev.IsMIG() {
+					migDevices[id] = true
+				}
+
+				klog.Infof("Device %s mapped to physical GPU %s (MIG: %v)",
+					id, dev.PhysicalID(), dev.IsMIG())
 			} else {
-				klog.Warningf("Device %s not found in deviceMap!", id)
+				klog.Errorf("Device %s not found in deviceMap! Possible configuration error", id)
+				return nil, fmt.Errorf("invalid device allocation request: device %s not found", id)
 			}
 		}
 
 		// 提取物理GPU索引列表（去重）
-		var physicalIDs []string
+		physicalIDs := make([]string, 0, len(physicalDevices))
 		for id := range physicalDevices {
 			physicalIDs = append(physicalIDs, id)
 		}
 
-		klog.Infof("Allocating devices for container: %v", deviceIDs)
+		klog.Infof("Allocating %d devices for container: %v", len(containerReq.DevicesIDs), containerReq.DevicesIDs)
 
 		// 尝试分配这些设备
-		if err := s.allocator.Allocate(deviceIDs); err != nil {
-			klog.Errorf("Allocation failed for devices %v: %v", deviceIDs, err)
+		if err := s.allocator.Allocate(containerReq.DevicesIDs); err != nil {
+			klog.Errorf("Allocation failed for devices %v: %v", containerReq.DevicesIDs, err)
 			return nil, fmt.Errorf("allocation failed: %v", err)
 		}
 
-		// 添加 CUDA 库路径 (需在 DaemonSet 中定义)
+		// ================= 核心环境变量设置 =================
+		envs := make(map[string]string)
 		cudaLibPath := "/host-lib" // 宿主机 CUDA 库路径
 
-		// 添加 CUDA 环境变量
-		containerResp.Envs = map[string]string{
-			"CUDA_VISIBLE_DEVICES":       strings.Join(physicalIDs, ","),             // 使用物理GPU索引
-			"NVIDIA_MIG_VISIBLE_DEVICES": strings.Join(containerReq.DevicesIDs, ","), // 原始MIG设备ID
-			"LD_LIBRARY_PATH":            "/usr/local/cuda/lib64:/host-lib:$LD_LIBRARY_PATH",
+		// 基础CUDA环境变量
+		envs["LD_LIBRARY_PATH"] = "/usr/local/cuda/lib64:" + cudaLibPath + ":$LD_LIBRARY_PATH"
+
+		// MIG设备特殊处理
+		if len(migDevices) > 0 {
+			// 为MIG设备设置专用环境变量
+			migIDs := make([]string, 0, len(migDevices))
+			for id := range migDevices {
+				migIDs = append(migIDs, id)
+			}
+
+			envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(migIDs, ",")
+
+			klog.Infof("MIG allocation: physical GPUs=%v, MIG devices=%v",
+				physicalIDs, migIDs)
+		} else {
+
+			envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(physicalIDs, ",")
+
+			// 非MIG设备使用标准设置
+			envs["CUDA_VISIBLE_DEVICES"] = strings.Join(containerReq.DevicesIDs, ",")
 		}
 
-		// 添加 CUDA 库挂载
-		containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
-			HostPath:      cudaLibPath,
-			ContainerPath: cudaLibPath,
-			ReadOnly:      true,
-		})
+		containerResp.Envs = envs
 
-		// ✅ 打印所有环境变量（关键修复）
+		// 打印环境变量用于调试
 		for k, v := range containerResp.Envs {
 			klog.Infof("Setting env: %s=%s", k, v)
 		}
 
-		// 2. 挂载物理设备
+		// ================= 设备挂载设置 =================
+		// 挂载物理GPU设备
 		for physID := range physicalDevices {
 			devicePath := fmt.Sprintf("/dev/nvidia%s", physID)
 			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
@@ -201,18 +220,20 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 				ContainerPath: devicePath,
 				Permissions:   "rwm",
 			})
-			klog.Infof("Adding device mount for %s: %s", physID, devicePath)
-
+			klog.Infof("Mounted GPU device: %s", devicePath)
 		}
 
-		containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-			HostPath:      "/dev/nvidia-caps",
-			ContainerPath: "/dev/nvidia-caps",
-			Permissions:   "rw",
-		})
-		klog.Infof("Adding mig device mount for %s: %v", "mig", containerResp.Devices)
+		// MIG设备需要特殊caps挂载
+		if len(migDevices) > 0 {
+			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+				HostPath:      "/dev/nvidia-caps",
+				ContainerPath: "/dev/nvidia-caps",
+				Permissions:   "rw",
+			})
+			klog.Infof("Mounted MIG caps directory")
+		}
 
-		// ✅ 添加必备控制设备
+		// 必备控制设备挂载
 		controlDevices := []string{"nvidiactl", "nvidia-uvm", "nvidia-uvm-tools", "nvidia-modeset"}
 		for _, dev := range controlDevices {
 			path := fmt.Sprintf("/dev/%s", dev)
@@ -221,8 +242,15 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 				ContainerPath: path,
 				Permissions:   "rwm",
 			})
-			klog.Infof("Mounted control device: %s", path)
+			klog.V(5).Infof("Mounted control device: %s", path)
 		}
+
+		// ================= CUDA库挂载 =================
+		containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
+			HostPath:      cudaLibPath,
+			ContainerPath: cudaLibPath,
+			ReadOnly:      true,
+		})
 
 		response.ContainerResponses = append(response.ContainerResponses, containerResp)
 	}

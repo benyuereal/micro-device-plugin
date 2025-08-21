@@ -205,20 +205,14 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 		}
 
-		// 3. 挂载MIG设备
-		for _, migID := range containerReq.DevicesIDs {
-			if dev, ok := s.deviceMap[migID]; ok {
-				containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-					HostPath:      dev.GetPath(),
-					ContainerPath: dev.GetPath(),
-					Permissions:   "rwm",
-				})
-				klog.Infof("Adding mig device mount for %s: %s", migID, dev.GetPath())
+		containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+			HostPath:      "/dev/nvidia-caps",
+			ContainerPath: "/dev/nvidia-caps",
+			Permissions:   "rw",
+		})
+		klog.Infof("Adding mig device mount for %s: %v", "mig", containerResp.Devices)
 
-			}
-		}
-
-		// ✅ 添加必备控制设备（参考HAMi）
+		// ✅ 添加必备控制设备
 		controlDevices := []string{"nvidiactl", "nvidia-uvm", "nvidia-uvm-tools", "nvidia-modeset"}
 		for _, dev := range controlDevices {
 			path := fmt.Sprintf("/dev/%s", dev)

@@ -94,6 +94,8 @@ func (s *DevicePluginServer) updateDeviceList(stream pluginapi.DevicePlugin_List
 		discoveredIDs[d.ID()] = true
 	}
 	s.allocator.CleanupOrphanedDevices(discoveredIDs)
+	// 更新设备映射
+	s.deviceMap = make(map[string]device.GPUDevice)
 
 	deviceList := make([]*pluginapi.Device, len(devices))
 	healthStatusCount := map[string]int{
@@ -146,16 +148,10 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 				hasMIGDevice = true
 			}
 			deviceIDs = append(deviceIDs, id)
-			/**
-			fixme 快速测试 先写死
-			*/
-			physicalDevices["0"] = true
 
-			//if device, exists := s.deviceMap[id]; exists {
-			//	if nvDevice, ok := device.(*device.NVIDIADevice); ok {
-			//		physicalDevices[nvDevice.PhysicalID()] = true
-			//	}
-			//}
+			if device, exists := s.deviceMap[id]; exists {
+				physicalDevices[device.PhysicalID()] = true
+			}
 		}
 		// 为MIG设备添加专用挂载
 		if hasMIGDevice {
@@ -184,8 +180,7 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 		// 添加 CUDA 环境变量
 		containerResp.Envs = map[string]string{
-			"CUDA_VISIBLE_DEVICES":       strings.Join(physicalIDs, ","), // 使用物理GPU索引
-			"NVIDIA_VISIBLE_DEVICES":     strings.Join(physicalIDs, ","),
+			"CUDA_VISIBLE_DEVICES":       strings.Join(physicalIDs, ","),             // 使用物理GPU索引
 			"NVIDIA_MIG_VISIBLE_DEVICES": strings.Join(containerReq.DevicesIDs, ","), // 原始MIG设备ID
 			"LD_LIBRARY_PATH":            "/usr/local/cuda/lib64:/host-lib:$LD_LIBRARY_PATH",
 		}

@@ -167,113 +167,65 @@ func (m *NVIDIAManager) discoverMIGDevices(gpuIndex string) ([]GPUDevice, error)
 		return nil, err
 	}
 
-	lines := strings.Split(output, "\n")
-	// 跳过表头（如果有）
-	startIndex := 0
-	for i, line := range lines {
-		if strings.Contains(line, "GPU Instance ID") {
-			startIndex = i + 1
-			break
+	uuids, err := m.getMIGDeviceUUIDs(gpuIndex)
+
+	for index, uuid := range uuids {
+		// 创建设备ID: GPUIndex-GI-CI
+
+		klog.Infof("Device ID: %s", uuid)
+		device := &NVIDIADevice{
+			id:          uuid,
+			deviceIndex: string(rune(index)), // 使用GPU实例ID作为设备索引
+			physicalID:  gpuIndex,
+			migEnabled:  true,
+			profile:     "3g.20gb",
+			healthy:     true,
 		}
-	}
+		klog.Infof("device: %v", device)
+		devices = append(devices, device)
+		m.deviceMap[uuid] = device
 
-	// 如果没有找到表头，则从0开始
-	if startIndex >= len(lines) {
-		startIndex = 0
-	}
-
-	// 定义正则表达式（在循环外部编译）
-	giRegex := regexp.MustCompile(`\|\s*(\d+)\s+MIG\s+([\w\.]+)\s+(\d+)\s+(\d+)\s+(\S+)\s*\|`)
-	ciRegex := regexp.MustCompile(`\|\s*(\d+)\s+(\d+)\s+MIG\s+([\w\.]+)\s+(\d+)\s+(\d+)\s+(\S+)\s*\|`)
-
-	for i := startIndex; i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-
-		// 使用正则解析GPU实例行
-		giMatches := giRegex.FindStringSubmatch(line)
-		if giMatches == nil {
-			klog.V(5).Infof("Skipping unmatchable GI line: %s", line)
-			continue
-		}
-
-		// 提取关键字段 (注意索引从1开始)
-		gpuIdx := giMatches[1]        // "0"
-		gpuInstanceID := giMatches[4] // "1"
-
-		// 只处理当前GPU
-		if gpuIdx != gpuIndex {
-			continue
-		}
-
-		// 获取计算实例（Compute Instances）
-		ciOut, err := runNvidiaSmiCommand("mig", "-lci", "-i", gpuIndex, "-gi", gpuInstanceID)
-		if err != nil {
-			klog.Errorf("Failed to query compute instances for GI %s: %v", gpuInstanceID, err)
-			continue
-		}
-
-		ciOutput := strings.TrimSpace(string(ciOut))
-		// 处理无计算实例的情况
-		if strings.Contains(ciOutput, "No compute instances found") {
-			klog.V(4).Infof("No compute instances found for GPU instance %s on GPU %s", gpuInstanceID, gpuIndex)
-			continue
-		}
-
-		ciLines := strings.Split(ciOutput, "\n")
-		ciStartIndex := 0
-		for j, ciLine := range ciLines {
-			if strings.Contains(ciLine, "Compute Instance ID") {
-				ciStartIndex = j + 1
-				break
-			}
-		}
-
-		for j := ciStartIndex; j < len(ciLines); j++ {
-			ciLine := strings.TrimSpace(ciLines[j])
-			if ciLine == "" {
-				continue
-			}
-
-			ciMatches := ciRegex.FindStringSubmatch(ciLine)
-			if ciMatches == nil {
-				klog.Infof("Skipping unmatchable CI line: %s", ciLine)
-				continue
-			}
-
-			klog.Infof("Found compute instance %s on GPU %s, line %a", gpuInstanceID, gpuIndex, ciLine)
-			// 提取计算实例字段
-			ciGpuIdx := ciMatches[1]          // "0"
-			ciGiID := ciMatches[2]            // "1"
-			ciProfileName := ciMatches[3]     // "3g.20gb"
-			computeInstanceID := ciMatches[5] // "0"
-
-			// 验证属于当前GPU实例
-			if ciGpuIdx != gpuIndex || ciGiID != gpuInstanceID {
-				continue
-			}
-
-			// 创建设备ID: GPUIndex-GI-CI
-			deviceID := fmt.Sprintf("%s-GI%s-CI%s", gpuIndex, gpuInstanceID, computeInstanceID)
-
-			klog.Infof("Device ID: %s", deviceID)
-			device := &NVIDIADevice{
-				id:          deviceID,
-				deviceIndex: gpuInstanceID, // 使用GPU实例ID作为设备索引
-				physicalID:  gpuIndex,
-				migEnabled:  true,
-				profile:     ciProfileName,
-				healthy:     true,
-			}
-			klog.Infof("device: %v", device)
-			devices = append(devices, device)
-			m.deviceMap[deviceID] = device
-		}
+		klog.Infof("Found device: %v", device)
 	}
 
 	return devices, nil
+}
+
+// 获取指定GPU上的MIG设备UUID
+func (m *NVIDIAManager) getMIGDeviceUUIDs(gpuIndex string) ([]string, error) {
+	// 使用nvidia-smi -L命令获取所有GPU信息
+	out, err := runNvidiaSmiCommand("-L")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MIG UUIDs: %v", err)
+	}
+
+	output := strings.TrimSpace(string(out))
+	lines := strings.Split(output, "\n")
+
+	var uuids []string
+	currentGPU := ""
+
+	for _, line := range lines {
+		// 匹配GPU行
+		if strings.HasPrefix(line, "GPU "+gpuIndex+":") {
+			currentGPU = gpuIndex
+			continue
+		}
+
+		// 匹配MIG设备行
+		if currentGPU == gpuIndex && strings.Contains(line, "MIG") && strings.Contains(line, "UUID") {
+			parts := strings.Split(line, "UUID:")
+			if len(parts) >= 2 {
+				uuid := strings.TrimSpace(parts[1])
+				// 移除末尾的括号
+				uuid = strings.TrimSuffix(uuid, ")")
+				uuids = append(uuids, uuid)
+			}
+		}
+	}
+
+	klog.Infof("Found %d MIG UUIDs for GPU %s: %v", len(uuids), gpuIndex, uuids)
+	return uuids, nil
 }
 
 func (m *NVIDIAManager) getProfileName(profileID string) (string, error) {

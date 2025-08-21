@@ -30,9 +30,9 @@ func (d *NVIDIADevice) GetVendor() string { return "nvidia" }
 func (d *NVIDIADevice) GetPath() string {
 	if d.migEnabled {
 		// 生成设备节点名称（如 nvidia-cap12）
-		return fmt.Sprintf("/dev/nvidia-caps/nvidia-cap%s", d.deviceIndex)
+		return fmt.Sprintf("/dev/nvidia-caps/nvidia-cap%s", d.physicalID)
 	}
-	return "/dev/nvidia" + d.deviceIndex
+	return "/dev/nvidia" + d.physicalID
 }
 func (d *NVIDIADevice) IsMIG() bool { return d.migEnabled }
 func (d *NVIDIADevice) PhysicalID() string { // 对于MIG设备返回物理GPU索引（如"0"）

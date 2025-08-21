@@ -137,30 +137,16 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 	for _, containerReq := range req.ContainerRequests {
 		containerResp := new(pluginapi.ContainerAllocateResponse)
-		hasMIGDevice := false                    // 标记是否包含MIG设备
 		physicalDevices := make(map[string]bool) // 存储物理GPU索引
 		// 收集所有请求的设备ID
 		var deviceIDs []string
 		for _, id := range containerReq.DevicesIDs {
-			// 挂载物理GPU设备（如/dev/nvidia0）
-			// 检测是否为MIG设备
-			if s.isMIGDevice(id) {
-				hasMIGDevice = true
-			}
 			deviceIDs = append(deviceIDs, id)
-
-			if device, exists := s.deviceMap[id]; exists {
-				physicalDevices[device.PhysicalID()] = true
+			if devi, exists := s.deviceMap[id]; exists {
+				physicalDevices[devi.PhysicalID()] = true
 			}
 		}
-		// 为MIG设备添加专用挂载
-		if hasMIGDevice {
-			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-				HostPath:      "/dev/nvidia-caps",
-				ContainerPath: "/dev/nvidia-caps",
-				Permissions:   "rw",
-			})
-		}
+
 		// 提取物理GPU索引列表（去重）
 		var physicalIDs []string
 		for id := range physicalDevices {
@@ -191,30 +177,47 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			ContainerPath: cudaLibPath,
 			ReadOnly:      true,
 		})
-		klog.Infof("Set environment variable: %s_DEVICE_IDS=%s", s.resource, containerResp.Envs[s.resource+"_DEVICE_IDS"])
 
-		// 添加设备挂载
-		for _, id := range deviceIDs {
-			devices, _ := s.manager.DiscoverGPUs()
-			var devicePath string
-			for _, d := range devices {
-				if d.ID() == id {
-					devicePath = d.GetPath()
-					klog.Infof("Device %s is on GPU %s", d.ID(), devicePath)
-					break
-				}
-			}
+		// ✅ 打印所有环境变量（关键修复）
+		for k, v := range containerResp.Envs {
+			klog.Infof("Setting env: %s=%s", k, v)
+		}
 
-			if devicePath != "" {
+		// 2. 挂载物理设备
+		for physID := range physicalDevices {
+			devicePath := fmt.Sprintf("/dev/nvidia%s", physID)
+			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+				HostPath:      devicePath,
+				ContainerPath: devicePath,
+				Permissions:   "rwm",
+			})
+			klog.Infof("Adding device mount for %s: %s", physID, devicePath)
+
+		}
+
+		// 3. 挂载MIG设备
+		for _, migID := range containerReq.DevicesIDs {
+			if dev, ok := s.deviceMap[migID]; ok {
 				containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-					HostPath:      devicePath,
-					ContainerPath: devicePath,
-					Permissions:   "rw",
+					HostPath:      dev.GetPath(),
+					ContainerPath: dev.GetPath(),
+					Permissions:   "rwm",
 				})
-				klog.Infof("Adding device mount for %s: %s", id, devicePath)
-			} else {
-				klog.Warningf("Device path not found for device ID: %s", id)
+				klog.Infof("Adding mig device mount for %s: %s", migID, dev.GetPath())
+
 			}
+		}
+
+		// ✅ 添加必备控制设备（参考HAMi）
+		controlDevices := []string{"nvidiactl", "nvidia-uvm", "nvidia-uvm-tools", "nvidia-modeset"}
+		for _, dev := range controlDevices {
+			path := fmt.Sprintf("/dev/%s", dev)
+			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+				HostPath:      path,
+				ContainerPath: path,
+				Permissions:   "rwm",
+			})
+			klog.Infof("Mounted control device: %s", path)
 		}
 
 		response.ContainerResponses = append(response.ContainerResponses, containerResp)

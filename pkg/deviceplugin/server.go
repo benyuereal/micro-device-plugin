@@ -94,8 +94,14 @@ func (s *DevicePluginServer) updateDeviceList(stream pluginapi.DevicePlugin_List
 		discoveredIDs[d.ID()] = true
 	}
 	s.allocator.CleanupOrphanedDevices(discoveredIDs)
-	// 更新设备映射
-	s.deviceMap = make(map[string]device.GPUDevice)
+
+	// 修复：在更新设备列表时重建deviceMap
+	newDeviceMap := make(map[string]device.GPUDevice)
+	for _, d := range devices {
+		newDeviceMap[d.ID()] = d
+	}
+	s.deviceMap = newDeviceMap
+	klog.Infof("Discovered %d new devices, deviceMap %v", len(newDeviceMap), newDeviceMap)
 
 	deviceList := make([]*pluginapi.Device, len(devices))
 	healthStatusCount := map[string]int{
@@ -142,8 +148,12 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		var deviceIDs []string
 		for _, id := range containerReq.DevicesIDs {
 			deviceIDs = append(deviceIDs, id)
-			if devi, exists := s.deviceMap[id]; exists {
-				physicalDevices[devi.PhysicalID()] = true
+			if dev, exists := s.deviceMap[id]; exists {
+				physicalDevices[dev.PhysicalID()] = true
+
+				klog.Infof("Device %s mapped to physical GPU %s", id, dev.PhysicalID())
+			} else {
+				klog.Warningf("Device %s not found in deviceMap!", id)
 			}
 		}
 

@@ -15,10 +15,6 @@ spec:
         app: micro-device-plugin
     spec:
       hostNetwork: true
-      tolerations:
-        - key: nvidia.com/customgpu
-          operator: Exists
-          effect: NoSchedule
       containers:
         - name: plugin
           image: binyue/micro-device-plugin:v1.0.13 # 更新版本

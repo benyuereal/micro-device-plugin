@@ -184,24 +184,39 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		// 基础CUDA环境变量
 		envs["LD_LIBRARY_PATH"] = "/usr/local/cuda/lib64:" + cudaLibPath + ":$LD_LIBRARY_PATH"
 
+		// 设置环境变量 - 关键修改点！
+		envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(physicalIDs, ",") // 直接使用数字索引
+		envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility"
+		envs["NVIDIA_MIG_CONFIG_DEVICES"] = "all"
+		envs["NVIDIA_MIG_MONITOR_DEVICES"] = strings.Join(physicalIDs, ",")
+
+		// 挂载MIG控制目录
+		containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+			HostPath:      "/dev/nvidia-caps",
+			ContainerPath: "/dev/nvidia-caps",
+			Permissions:   "rw",
+		})
 		// MIG设备特殊处理
 		if len(migDevices) > 0 {
+
+			// 挂载具体的MIG设备文件
+			for physID := range physicalDevices {
+				capPath := fmt.Sprintf("/dev/nvidia-caps/nvidia-cap%s", physID)
+				containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+					HostPath:      capPath,
+					ContainerPath: capPath,
+					Permissions:   "rw",
+				})
+				klog.Infof("Mounted MIG cap device: %s", capPath)
+			}
 			// 为MIG设备设置专用环境变量
 			migIDs := make([]string, 0, len(migDevices))
 			for id := range migDevices {
 				migIDs = append(migIDs, id)
 			}
 
-			envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(migIDs, ",")
-
 			klog.Infof("MIG allocation: physical GPUs=%v, MIG devices=%v",
 				physicalIDs, migIDs)
-		} else {
-
-			envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(physicalIDs, ",")
-
-			// 非MIG设备使用标准设置
-			envs["CUDA_VISIBLE_DEVICES"] = strings.Join(containerReq.DevicesIDs, ",")
 		}
 
 		containerResp.Envs = envs
@@ -221,16 +236,6 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 				Permissions:   "rwm",
 			})
 			klog.Infof("Mounted GPU device: %s", devicePath)
-		}
-
-		// MIG设备需要特殊caps挂载
-		if len(migDevices) > 0 {
-			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-				HostPath:      "/dev/nvidia-caps",
-				ContainerPath: "/dev/nvidia-caps",
-				Permissions:   "rw",
-			})
-			klog.Infof("Mounted MIG caps directory")
 		}
 
 		// 必备控制设备挂载

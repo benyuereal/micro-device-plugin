@@ -165,7 +165,7 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		containerResp.Envs = map[string]string{
 			s.resource + "_DEVICE_IDS": strings.Join(deviceIDs, ","),
 		}
-		klog.V(4).Infof("Set environment variable: %s_DEVICE_IDS=%s", s.resource, containerResp.Envs[s.resource+"_DEVICE_IDS"])
+		klog.Infof("Set environment variable: %s_DEVICE_IDS=%s", s.resource, containerResp.Envs[s.resource+"_DEVICE_IDS"])
 
 		// 添加设备挂载
 		for _, id := range deviceIDs {

@@ -45,6 +45,10 @@ spec:
             # 是否跳过已切分的设备
             - name: SKIP_CONFIGURED
               value: "true"
+            - name: CDI_ENABLED
+              value: "false"  # 启用CDI
+            - name: CDI_PREFIX
+              value: "micro.device"  # CDI前缀
           volumeMounts:
             - name: device-plugin
               mountPath: /var/lib/kubelet/device-plugins
@@ -57,6 +61,8 @@ spec:
               mountPath: /host-lib
             - name: dev-caps
               mountPath: /dev/nvidia-caps
+            - name: cdi-dir  # 新增卷
+              mountPath: /etc/cdi
 
       volumes:
         - name: device-plugin
@@ -76,3 +82,7 @@ spec:
           hostPath:
             path: /dev/nvidia-caps
             type: Directory
+        - name: cdi-dir   # 新增卷定义
+          hostPath:
+            path: /etc/cdi
+            type: DirectoryOrCreate

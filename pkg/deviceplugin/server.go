@@ -34,9 +34,11 @@ type DevicePluginServer struct {
 	server          *grpc.Server
 	lastDeviceState map[string]string           // 使用字符串记录健康状态
 	deviceMap       map[string]device.GPUDevice // 设备ID到设备对象的映射
+	cdiEnabled      bool
+	cdiPrefix       string // 添加CDI前缀配置
 }
 
-func New(vendor string, manager device.DeviceManager) *DevicePluginServer {
+func New(vendor string, manager device.DeviceManager, cdiEnabled bool, cdiPrefix string) *DevicePluginServer {
 	return &DevicePluginServer{
 		vendor:          vendor,
 		resource:        vendor + ".com/microgpu",
@@ -47,6 +49,8 @@ func New(vendor string, manager device.DeviceManager) *DevicePluginServer {
 		allocator:       allocator.NewSimpleAllocator(),
 		lastDeviceState: make(map[string]string),
 		deviceMap:       make(map[string]device.GPUDevice),
+		cdiEnabled:      cdiEnabled,
+		cdiPrefix:       cdiPrefix,
 	}
 }
 
@@ -145,118 +149,143 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		physicalDevices := make(map[string]bool) // 存储物理GPU索引
 		migDevices := make(map[string]bool)      // 存储MIG设备ID
 
-		// 收集设备信息并分类
-		for _, id := range containerReq.DevicesIDs {
-			if dev, exists := s.deviceMap[id]; exists {
-				physicalDevices[dev.PhysicalID()] = true
+		// 生成CDI设备名称（如果启用）
+		var cdiDevices []string
+		if s.cdiEnabled {
+			for _, id := range containerReq.DevicesIDs {
+				cdiDevices = append(cdiDevices, fmt.Sprintf("%s/%s=%s", s.cdiPrefix, s.resource, id))
+			}
+			klog.Infof("Generated CDI devices: %v", cdiDevices)
+		}
+		// ================= CDI模式 =================
+		if s.cdiEnabled {
+			containerResp.Envs = map[string]string{
+				// 设置CDI设备列表
+				"CDI_DEVICES": strings.Join(cdiDevices, ","),
 
-				// 标记MIG设备
-				if dev.IsMIG() {
-					migDevices[id] = true
+				// 保留原有环境变量（可选）
+				"NVIDIA_VISIBLE_DEVICES": strings.Join(containerReq.DevicesIDs, ","),
+			}
+
+			// 注意：在CDI模式下不挂载设备文件
+			klog.Info("CDI mode enabled, skipping device mounts")
+
+			// ================= 传统模式 =================
+		} else {
+			// ...原有设备挂载和环境变量设置代码保持不变...
+			// 收集设备信息并分类
+			for _, id := range containerReq.DevicesIDs {
+				if dev, exists := s.deviceMap[id]; exists {
+					physicalDevices[dev.PhysicalID()] = true
+
+					// 标记MIG设备
+					if dev.IsMIG() {
+						migDevices[id] = true
+					}
+
+					klog.Infof("Device %s mapped to physical GPU %s (MIG: %v)",
+						id, dev.PhysicalID(), dev.IsMIG())
+				} else {
+					klog.Errorf("Device %s not found in deviceMap! Possible configuration error", id)
+					return nil, fmt.Errorf("invalid device allocation request: device %s not found", id)
+				}
+			}
+
+			// 提取物理GPU索引列表（去重）
+			physicalIDs := make([]string, 0, len(physicalDevices))
+			for id := range physicalDevices {
+				physicalIDs = append(physicalIDs, id)
+			}
+
+			klog.Infof("Allocating %d devices for container: %v", len(containerReq.DevicesIDs), containerReq.DevicesIDs)
+
+			// 尝试分配这些设备
+			if err := s.allocator.Allocate(containerReq.DevicesIDs); err != nil {
+				klog.Errorf("Allocation failed for devices %v: %v", containerReq.DevicesIDs, err)
+				return nil, fmt.Errorf("allocation failed: %v", err)
+			}
+
+			// ================= 核心环境变量设置 =================
+			envs := make(map[string]string)
+			cudaLibPath := "/host-lib" // 宿主机 CUDA 库路径
+
+			// 基础CUDA环境变量
+			envs["LD_LIBRARY_PATH"] = "/usr/local/cuda/lib64:" + cudaLibPath + ":$LD_LIBRARY_PATH"
+
+			// 设置环境变量 - 关键修改点！
+			envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(containerReq.DevicesIDs, ",") // 直接使用数字索引
+			envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility"
+
+			// 挂载MIG控制目录
+			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+				HostPath:      "/dev/nvidia-caps",
+				ContainerPath: "/dev/nvidia-caps",
+				Permissions:   "rw",
+			})
+			// MIG设备特殊处理
+			if len(migDevices) > 0 {
+
+				// 挂载具体的MIG设备文件
+				//for physID := range physicalDevices {
+				//	capPath := fmt.Sprintf("/dev/nvidia-caps/nvidia-cap%s", physID)
+				//	containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+				//		HostPath:      capPath,
+				//		ContainerPath: capPath,
+				//		Permissions:   "rw",
+				//	})
+				//	klog.Infof("Mounted MIG cap device: %s", capPath)
+				//}
+				// 为MIG设备设置专用环境变量
+				migIDs := make([]string, 0, len(migDevices))
+				for id := range migDevices {
+					migIDs = append(migIDs, id)
 				}
 
-				klog.Infof("Device %s mapped to physical GPU %s (MIG: %v)",
-					id, dev.PhysicalID(), dev.IsMIG())
-			} else {
-				klog.Errorf("Device %s not found in deviceMap! Possible configuration error", id)
-				return nil, fmt.Errorf("invalid device allocation request: device %s not found", id)
-			}
-		}
-
-		// 提取物理GPU索引列表（去重）
-		physicalIDs := make([]string, 0, len(physicalDevices))
-		for id := range physicalDevices {
-			physicalIDs = append(physicalIDs, id)
-		}
-
-		klog.Infof("Allocating %d devices for container: %v", len(containerReq.DevicesIDs), containerReq.DevicesIDs)
-
-		// 尝试分配这些设备
-		if err := s.allocator.Allocate(containerReq.DevicesIDs); err != nil {
-			klog.Errorf("Allocation failed for devices %v: %v", containerReq.DevicesIDs, err)
-			return nil, fmt.Errorf("allocation failed: %v", err)
-		}
-
-		// ================= 核心环境变量设置 =================
-		envs := make(map[string]string)
-		cudaLibPath := "/host-lib" // 宿主机 CUDA 库路径
-
-		// 基础CUDA环境变量
-		envs["LD_LIBRARY_PATH"] = "/usr/local/cuda/lib64:" + cudaLibPath + ":$LD_LIBRARY_PATH"
-
-		// 设置环境变量 - 关键修改点！
-		envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(containerReq.DevicesIDs, ",") // 直接使用数字索引
-		envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility"
-
-		// 挂载MIG控制目录
-		containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-			HostPath:      "/dev/nvidia-caps",
-			ContainerPath: "/dev/nvidia-caps",
-			Permissions:   "rw",
-		})
-		// MIG设备特殊处理
-		if len(migDevices) > 0 {
-
-			// 挂载具体的MIG设备文件
-			//for physID := range physicalDevices {
-			//	capPath := fmt.Sprintf("/dev/nvidia-caps/nvidia-cap%s", physID)
-			//	containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-			//		HostPath:      capPath,
-			//		ContainerPath: capPath,
-			//		Permissions:   "rw",
-			//	})
-			//	klog.Infof("Mounted MIG cap device: %s", capPath)
-			//}
-			// 为MIG设备设置专用环境变量
-			migIDs := make([]string, 0, len(migDevices))
-			for id := range migDevices {
-				migIDs = append(migIDs, id)
+				klog.Infof("MIG allocation: physical GPUs=%v, MIG devices=%v",
+					physicalIDs, migIDs)
 			}
 
-			klog.Infof("MIG allocation: physical GPUs=%v, MIG devices=%v",
-				physicalIDs, migIDs)
-		}
+			containerResp.Envs = envs
 
-		containerResp.Envs = envs
+			// 打印环境变量用于调试
+			for k, v := range containerResp.Envs {
+				klog.Infof("Setting env: %s=%s", k, v)
+			}
 
-		// 打印环境变量用于调试
-		for k, v := range containerResp.Envs {
-			klog.Infof("Setting env: %s=%s", k, v)
-		}
+			// ================= 设备挂载设置 =================
+			// 挂载物理GPU设备
+			// 禁止为MIG设备挂载物理GPU设备
+			if len(migDevices) == 0 { // 仅当无MIG设备时挂载物理设备
+				for physID := range physicalDevices {
+					devicePath := fmt.Sprintf("/dev/nvidia%s", physID)
+					containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+						HostPath:      devicePath,
+						ContainerPath: devicePath,
+						Permissions:   "rwm",
+					})
+					klog.Infof("Mounted GPU device: %s", devicePath)
+				}
+			}
 
-		// ================= 设备挂载设置 =================
-		// 挂载物理GPU设备
-		// 禁止为MIG设备挂载物理GPU设备
-		if len(migDevices) == 0 { // 仅当无MIG设备时挂载物理设备
-			for physID := range physicalDevices {
-				devicePath := fmt.Sprintf("/dev/nvidia%s", physID)
+			// 必备控制设备挂载
+			controlDevices := []string{"nvidiactl", "nvidia-uvm", "nvidia-uvm-tools", "nvidia-modeset"}
+			for _, dev := range controlDevices {
+				path := fmt.Sprintf("/dev/%s", dev)
 				containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-					HostPath:      devicePath,
-					ContainerPath: devicePath,
+					HostPath:      path,
+					ContainerPath: path,
 					Permissions:   "rwm",
 				})
-				klog.Infof("Mounted GPU device: %s", devicePath)
+				klog.V(5).Infof("Mounted control device: %s", path)
 			}
-		}
 
-		// 必备控制设备挂载
-		controlDevices := []string{"nvidiactl", "nvidia-uvm", "nvidia-uvm-tools", "nvidia-modeset"}
-		for _, dev := range controlDevices {
-			path := fmt.Sprintf("/dev/%s", dev)
-			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-				HostPath:      path,
-				ContainerPath: path,
-				Permissions:   "rwm",
+			// ================= CUDA库挂载 =================
+			containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
+				HostPath:      cudaLibPath,
+				ContainerPath: cudaLibPath,
+				ReadOnly:      true,
 			})
-			klog.V(5).Infof("Mounted control device: %s", path)
 		}
-
-		// ================= CUDA库挂载 =================
-		containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
-			HostPath:      cudaLibPath,
-			ContainerPath: cudaLibPath,
-			ReadOnly:      true,
-		})
 
 		response.ContainerResponses = append(response.ContainerResponses, containerResp)
 	}

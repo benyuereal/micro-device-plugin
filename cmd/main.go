@@ -20,6 +20,11 @@ func main() {
 
 	// 获取环境变量设置
 	simulate := os.Getenv("SIMULATE")
+	cdiEnabled := os.Getenv("CDI_ENABLED") == "true"
+	cdiPrefix := os.Getenv("CDI_PREFIX")
+	if cdiPrefix == "" {
+		cdiPrefix = "micro.device" // 默认值
+	}
 	klog.Infof("Running in simulation mode: %s", simulate)
 
 	// 初始化设备管理器
@@ -61,7 +66,7 @@ func main() {
 		go func(vendor string, manager device.DeviceManager) {
 			defer wg.Done()
 
-			srv := deviceplugin.New(vendor, manager)
+			srv := deviceplugin.New(vendor, manager, cdiEnabled, cdiPrefix)
 			if err := srv.Start(); err != nil {
 				klog.Errorf("Failed to start %s device plugin: %v", vendor, err)
 				return

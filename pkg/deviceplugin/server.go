@@ -190,9 +190,6 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(physicalIDs, ",")
 		envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility"
 
-		// 优化库路径设置
-		envs["LD_LIBRARY_PATH"] = "/usr/local/nvidia/host-libs:/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
-
 		// 挂载MIG控制目录
 		containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
 			HostPath:      "/dev/nvidia-caps",
@@ -245,11 +242,11 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		}
 
 		// ================= CUDA库挂载 =================
-		containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
-			HostPath:      "/usr/lib/x86_64-linux-gnu",
-			ContainerPath: "/usr/local/nvidia/host-libs",
-			ReadOnly:      true,
-		})
+		//containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
+		//	HostPath:      "/usr/lib/x86_64-linux-gnu",
+		//	ContainerPath: "/usr/local/nvidia/host-libs",
+		//	ReadOnly:      true,
+		//})
 
 		response.ContainerResponses = append(response.ContainerResponses, containerResp)
 	}

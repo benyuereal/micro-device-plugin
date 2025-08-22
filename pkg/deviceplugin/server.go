@@ -191,15 +191,7 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility"
 
 		// 优化库路径设置
-		envs["LD_LIBRARY_PATH"] = "/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
-		envs["PATH"] = "/usr/local/nvidia/bin:$PATH"
-
-		// 在非CDI模式中添加
-		containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
-			HostPath:      "/usr/bin",              // 宿主机路径
-			ContainerPath: "/usr/local/nvidia/bin", // 容器内路径
-			ReadOnly:      true,
-		})
+		envs["LD_LIBRARY_PATH"] = "/usr/local/nvidia/host-libs:/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
 
 		// 挂载MIG控制目录
 		containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{

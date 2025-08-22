@@ -233,3 +233,33 @@ sudo k3s ctr images import pytorch.tar
 [nvidia-container-runtime]
 resources = ["nvidia.com/gpu", "nvidia.com/microgpu"]
 ```
+
+```shell
+func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
+    // ... [现有代码] ...
+
+    // ================= 添加 NVIDIA 工具注入 =================
+    // 挂载 NVIDIA CLI 工具
+    containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
+        HostPath:      "/usr/bin/nvidia-container-cli",
+        ContainerPath: "/usr/bin/nvidia-container-cli",
+        ReadOnly:      true,
+    })
+    
+    // 挂载容器运行时配置
+    containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
+        HostPath:      "/etc/nvidia-container-runtime",
+        ContainerPath: "/etc/nvidia-container-runtime",
+        ReadOnly:      true,
+    })
+    
+    // 设置环境变量触发注入
+    envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(physicalIDs, ",")
+    envs["NVIDIA_DRIVER_CAPABILITIES"] = "all"  // 关键修改：从 compute,utility 改为 all
+    
+    // ================= 添加 PATH 设置 =================
+    envs["PATH"] = "/usr/local/nvidia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    
+    // ... [现有代码] ...
+}
+```

@@ -187,8 +187,10 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		envs := make(map[string]string)
 
 		// 关键修改：使用物理索引而非设备ID
-		envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(physicalIDs, ",")
-		envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility"
+		envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(containerReq.DevicesIDs, ",")
+		envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility,video,graphics"
+		envs["NVIDIA_DISABLE_REQUIRE"] = "1"
+		envs["NVIDIA_REQUIRE_MIG"] = "1"
 
 		// 挂载MIG控制目录
 		containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
@@ -207,8 +209,6 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			klog.Infof("MIG allocation: physical GPUs=%v, MIG devices=%v",
 				physicalDevices, migIDs)
 
-			// 关键新增：MIG设备需要额外环境变量
-			envs["NVIDIA_MIG_CONFIG_DEVICES"] = strings.Join(migIDs, ",")
 		}
 
 		containerResp.Envs = envs

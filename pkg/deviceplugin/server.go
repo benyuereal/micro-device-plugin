@@ -210,12 +210,21 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			cudaLibPath := "/host-lib" // 宿主机 CUDA 库路径
 
 			// 基础CUDA环境变量
-			envs["LD_LIBRARY_PATH"] = "/usr/local/cuda/lib64:" + cudaLibPath + ":$LD_LIBRARY_PATH"
+			envs["LD_LIBRARY_PATH"] = "/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib:/usr/local/nvidia/lib64" + ":$LD_LIBRARY_PATH"
 
 			// 设置环境变量 - 关键修改点！
 			envs["NVIDIA_VISIBLE_DEVICES"] = strings.Join(containerReq.DevicesIDs, ",") // 直接使用数字索引
 			envs["NVIDIA_DRIVER_CAPABILITIES"] = "compute,utility"
 
+			// 在非CDI模式中添加
+			containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
+				HostPath:      "/usr/bin",              // 宿主机路径
+				ContainerPath: "/usr/local/nvidia/bin", // 容器内路径
+				ReadOnly:      true,
+			})
+
+			// 设置PATH环境变量
+			envs["PATH"] = "/usr/local/nvidia/bin:$PATH"
 			// 挂载MIG控制目录
 			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
 				HostPath:      "/dev/nvidia-caps",
@@ -224,17 +233,6 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			})
 			// MIG设备特殊处理
 			if len(migDevices) > 0 {
-
-				// 挂载具体的MIG设备文件
-				//for physID := range physicalDevices {
-				//	capPath := fmt.Sprintf("/dev/nvidia-caps/nvidia-cap%s", physID)
-				//	containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-				//		HostPath:      capPath,
-				//		ContainerPath: capPath,
-				//		Permissions:   "rw",
-				//	})
-				//	klog.Infof("Mounted MIG cap device: %s", capPath)
-				//}
 				// 为MIG设备设置专用环境变量
 				migIDs := make([]string, 0, len(migDevices))
 				for id := range migDevices {
@@ -253,18 +251,14 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			}
 
 			// ================= 设备挂载设置 =================
-			// 挂载物理GPU设备
-			// 禁止为MIG设备挂载物理GPU设备
-			if len(migDevices) == 0 { // 仅当无MIG设备时挂载物理设备
-				for physID := range physicalDevices {
-					devicePath := fmt.Sprintf("/dev/nvidia%s", physID)
-					containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-						HostPath:      devicePath,
-						ContainerPath: devicePath,
-						Permissions:   "rwm",
-					})
-					klog.Infof("Mounted GPU device: %s", devicePath)
-				}
+			for physID := range physicalDevices {
+				devicePath := fmt.Sprintf("/dev/nvidia%s", physID)
+				containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
+					HostPath:      devicePath,
+					ContainerPath: devicePath,
+					Permissions:   "rwm",
+				})
+				klog.Infof("Mounted GPU device: %s", devicePath)
 			}
 
 			// 必备控制设备挂载

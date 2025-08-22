@@ -41,7 +41,7 @@ spec:
       hostNetwork: true
       containers:
         - name: plugin
-          image: docker.io/binyue/micro-device-plugin:v1.0.13 # 更新版本
+          image: binyue/micro-device-plugin:v1.0.13 # 更新版本
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true

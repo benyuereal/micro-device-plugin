@@ -42,8 +42,8 @@ docker build \
   
   ### 使用代理构建
 docker build \
-  --build-arg HTTP_PROXY=http://192.168.10.159:7890 \
-  --build-arg HTTPS_PROXY=http://192.168.10.159:7890 \
+  --build-arg HTTP_PROXY=http://192.168.10.151:7890 \
+  --build-arg HTTPS_PROXY=http://192.168.10.151:7890 \
   -t binyue/micro-device-plugin:v1.0.13 .
 
 
@@ -219,4 +219,11 @@ docker save nvcr.io/nvidia/pytorch:24.05-py3 -o pytorch.tar
 
 # 导入到 K3s containerd
 sudo k3s ctr images import pytorch.tar
+```
+
+
+#### /etc/nvidia-container-runtime/config.toml
+```shell
+[nvidia-container-runtime]
+resources = ["nvidia.com/gpu", "nvidia.com/microgpu"]
 ```

@@ -241,13 +241,6 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			klog.Infof("Mounted control device: %s", path)
 		}
 
-		// ================= CUDA库挂载 =================
-		//containerResp.Mounts = append(containerResp.Mounts, &pluginapi.Mount{
-		//	HostPath:      "/usr/lib/x86_64-linux-gnu",
-		//	ContainerPath: "/usr/local/nvidia/host-libs",
-		//	ReadOnly:      true,
-		//})
-
 		response.ContainerResponses = append(response.ContainerResponses, containerResp)
 	}
 

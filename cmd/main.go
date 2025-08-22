@@ -22,7 +22,6 @@ func main() {
 	simulate := os.Getenv("SIMULATE")
 	cdiEnabled := os.Getenv("CDI_ENABLED") == "true"
 	cdiPrefix := os.Getenv("CDI_PREFIX")
-	nodeName := os.Getenv("NODE_NAME")
 	if cdiPrefix == "" {
 		cdiPrefix = "micro.device" // 默认值
 	}
@@ -67,8 +66,8 @@ func main() {
 		go func(vendor string, manager device.DeviceManager) {
 			defer wg.Done()
 
-			srv := deviceplugin.New(vendor, manager, cdiEnabled, cdiPrefix, nodeName)
-			if err := srv.Start(ctx); err != nil {
+			srv := deviceplugin.New(vendor, manager, cdiEnabled, cdiPrefix)
+			if err := srv.Start(); err != nil {
 				klog.Errorf("Failed to start %s device plugin: %v", vendor, err)
 				return
 			}

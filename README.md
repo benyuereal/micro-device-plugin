@@ -208,6 +208,12 @@ nvidia-smi -L | grep MIG | awk '{print $6}'
 docker run --rm \
   --gpus '"device=MIG-xxxx-xxxx-xxxx-xxxx"' \
   nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+  
+  # 运行容器并执行测试命令
+  
+docker run --rm --gpus all nvcr.io/nvidia/pytorch:24.05-py3 \
+  bash -c "nvidia-smi && nvcc --version && echo 'CUDA available:' && python -c 'import torch; print(torch.cuda.is_available())'"
+
 ```
 
 #### k3s镜像拉取

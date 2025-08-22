@@ -343,10 +343,10 @@ func (m *MIGManager) Configure() {
 		return
 	}
 
-	// 2. 创建MIG设备
-	if err := m.createMIGDevices(); err != nil {
-		klog.Errorf("Failed to create MIG devices: %v", err)
-	}
+	// 2. 创建MIG设备 fixme 先不要创建设备
+	//if err := m.createMIGDevices(); err != nil {
+	//	klog.Errorf("Failed to create MIG devices: %v", err)
+	//}
 }
 
 // 检查设备是否支持MIG

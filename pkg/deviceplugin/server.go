@@ -41,7 +41,7 @@ type DevicePluginServer struct {
 func New(vendor string, manager device.DeviceManager, cdiEnabled bool, cdiPrefix string) *DevicePluginServer {
 	return &DevicePluginServer{
 		vendor:          vendor,
-		resource:        vendor + ".com/microgpu",
+		resource:        vendor + ".com/gpu",
 		socket:          path.Join(pluginapi.DevicePluginPath, socketPrefix+"."+vendor),
 		stop:            make(chan struct{}),
 		healthChan:      make(chan string, 1),

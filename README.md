@@ -31,13 +31,21 @@ sudo apt install -y golang-1.20
 docker rmi binyue/micro-device-plugin:v1.0.9
 docker build -t binyue/micro-device-plugin:v1.0.13 .
 
-docker push binyue/micro-device-plugin:v1.0.11
+docker push binyue/micro-device-plugin:v1.0.13
 
 ### 使用代理构建
+docker build \
+  --build-arg HTTP_PROXY=http://10.0.168.50:7890 \
+  --build-arg HTTPS_PROXY=http://10.0.168.50:7890 \
+  -t binyue/micro-device-plugin:v1.0.13 .
+  
+  
+  ### 使用代理构建
 docker build \
   --build-arg HTTP_PROXY=http://192.168.10.159:7890 \
   --build-arg HTTPS_PROXY=http://192.168.10.159:7890 \
   -t binyue/micro-device-plugin:v1.0.13 .
+
 
 ### 导入到microk8s
 docker save binyue/micro-device-plugin:v1.0.13 -o micro-device-plugin.tar
@@ -53,8 +61,8 @@ eval $(minikube docker-env)
 
 # 2. 现在所有 docker 命令都针对 Minikube 环境
 docker build \
-  --build-arg HTTP_PROXY=http://192.168.10.151:7890 \
-  --build-arg HTTPS_PROXY=http://192.168.10.151:7890 \
+  --build-arg HTTP_PROXY=http://10.0.168.50:7890 \
+  --build-arg HTTPS_PROXY=http://10.0.168.50:7890 \
   -t binyue/micro-device-plugin:v1.0.13 .
 
 # 3. 验证
@@ -115,4 +123,100 @@ helm install --wait gpu-operator nvidia/gpu-operator \
 docker save binyue/micro-device-plugin:v1.0.13 -o micro-plugin.tar
 sudo microk8s ctr image import 
 sudo microk8s ctr images ls | grep pytorch
+```
+
+
+#### gpumig
+```shell
+sudo systemctl stop gdm
+sudo nvidia-smi -i 0 -mig 1
+sudo reboot
+sudo nvidia-smi mig -cgi 9 -C
+sudo nvidia-smi mig -cgi 9 -C
+
+```
+
+
+### micro k8s 安装
+```shell
+sudo snap install microk8s --classic
+# 将当前用户加入 microk8s 组，避免每次使用 sudo
+sudo usermod -a -G microk8s $USER
+sudo chown -f -R $USER ~/.kube
+# 退出当前终端重新登录，使组权限生效
+microk8s status --wait-ready
+
+alias kubectl='microk8s kubectl'
+
+```
+
+
+### 代理
+
+```shell
+./clash -f config.yaml &
+
+
+sudo mkdir -p /etc/systemd/system/docker.service.d
+sudo vim /etc/systemd/system/docker.service.d/http-proxy.conf
+
+[Service]
+Environment="HTTP_PROXY=http://127.0.0.1:7890"
+Environment="HTTPS_PROXY=http://127.0.0.1:7890"
+Environment="NO_PROXY=localhost,127.0.0.1,.docker.internal"
+
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+
+echo 'export http_proxy="http://127.0.0.1:7890"' >> ~/.bashrc
+echo 'export https_proxy="http://127.0.0.1:7890"' >> ~/.bashrc
+echo 'export all_proxy="socks5://127.0.0.1:7890"' >> ~/.bashrc
+source ~/.bashrc
+source ~/.bashrc
+
+
+sudo tee /etc/profile.d/proxy.sh <<EOF
+export http_proxy="http://127.0.0.1:7890"
+export https_proxy="http://127.0.0.1:7890"
+export ftp_proxy="http://127.0.0.1:7890"
+export no_proxy="localhost,127.0.0.1,10.96.0.0/12,.minikube"
+EOF
+
+source /etc/profile.d/proxy.sh
+sudo apt update
+
+
+sudo tee /etc/apt/apt.conf.d/95proxies <<EOF
+Acquire::http::Proxy "http://127.0.0.1:7890";
+Acquire::https::Proxy "http://127.0.0.1:7890";
+EOF
+```
+
+
+#### microk8s 拉取镜像
+```shell
+microk8s.ctr image pull nvcr.io/nvidia/pytorch:24.05-py3
+```
+
+#### 测试Mig设备
+```shell
+# 获取 MIG 设备 UUID
+nvidia-smi -L | grep MIG | awk '{print $6}'
+
+# 使用特定 MIG 设备运行测试
+docker run --rm \
+  --gpus '"device=MIG-xxxx-xxxx-xxxx-xxxx"' \
+  nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+```
+
+#### k3s镜像拉取
+
+```shell
+sudo k3s crictl images
+# 在宿主机上导出 Docker 镜像
+docker save nvcr.io/nvidia/pytorch:24.05-py3 -o pytorch.tar
+
+# 导入到 K3s containerd
+sudo k3s ctr images import pytorch.tar
 ```

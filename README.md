@@ -29,7 +29,7 @@ sudo apt install -y golang-1.20
 ### 镜像管理
 ```shell
 docker rmi binyue/micro-device-plugin:v1.0.9
-docker build -t binyue/micro-device-plugin:v1.0.11 .
+docker build -t binyue/micro-device-plugin:v1.0.13 .
 
 docker push binyue/micro-device-plugin:v1.0.11
 
@@ -39,6 +39,10 @@ docker build \
   --build-arg HTTPS_PROXY=http://192.168.10.159:7890 \
   -t binyue/micro-device-plugin:v1.0.13 .
 
+### 导入到microk8s
+docker save binyue/micro-device-plugin:v1.0.13 -o micro-device-plugin.tar
+sudo microk8s ctr image import micro-device-plugin.tar
+sudo microk8s ctr images ls | grep micro-device-plugin
 
 ```
 
@@ -49,8 +53,8 @@ eval $(minikube docker-env)
 
 # 2. 现在所有 docker 命令都针对 Minikube 环境
 docker build \
-  --build-arg HTTP_PROXY=http://192.168.10.159:7890 \
-  --build-arg HTTPS_PROXY=http://192.168.10.159:7890 \
+  --build-arg HTTP_PROXY=http://192.168.10.151:7890 \
+  --build-arg HTTPS_PROXY=http://192.168.10.151:7890 \
   -t binyue/micro-device-plugin:v1.0.13 .
 
 # 3. 验证

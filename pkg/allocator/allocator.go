@@ -9,26 +9,30 @@ import (
 
 // Allocator 设备资源分配器接口
 type Allocator interface {
-	Allocate(ids []string) error
+	Allocate(ids []string, podUID string) error // 增加podUID参数
 	Deallocate(ids []string)
 	GetAllocatedDevices() []string
 	CleanupOrphanedDevices(map[string]bool)
+	GetPodUID(deviceID string) string    // 修改为 string 参数
+	GetAllocationMap() map[string]string // 新增方法
 }
 
 // SimpleAllocator 简单的内存分配器实现
 type SimpleAllocator struct {
-	mu        sync.RWMutex
-	allocated map[string]bool // 已分配设备ID
+	mu          sync.RWMutex
+	allocated   map[string]bool   // 已分配设备ID
+	deviceToPod map[string]string // 新增：设备到 Pod 的映射
 }
 
 func NewSimpleAllocator() *SimpleAllocator {
 	return &SimpleAllocator{
-		allocated: make(map[string]bool),
+		allocated:   make(map[string]bool),
+		deviceToPod: make(map[string]string),
 	}
 }
 
 // Allocate 分配设备资源
-func (a *SimpleAllocator) Allocate(ids []string) error {
+func (a *SimpleAllocator) Allocate(ids []string, podUID string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -45,7 +49,20 @@ func (a *SimpleAllocator) Allocate(ids []string) error {
 		klog.Infof("Device allocated: %s", id)
 	}
 
+	for _, id := range ids {
+		a.allocated[id] = true
+		a.deviceToPod[id] = podUID // 记录设备到 Pod 的映射
+		klog.Infof("Device allocated: %s to pod %s", id, podUID)
+	}
+
 	return nil
+}
+
+// 新增方法：获取设备对应的 Pod UID
+func (a *SimpleAllocator) GetPodUID(deviceID string) string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.deviceToPod[deviceID]
 }
 
 // Deallocate 释放设备资源
@@ -56,6 +73,7 @@ func (a *SimpleAllocator) Deallocate(ids []string) {
 	for _, id := range ids {
 		if _, exists := a.allocated[id]; exists {
 			delete(a.allocated, id)
+			delete(a.deviceToPod, id) // 清理映射关系
 			klog.Infof("Device deallocated: %s", id)
 		}
 	}
@@ -82,6 +100,19 @@ func (a *SimpleAllocator) CleanupOrphanedDevices(discoveredIDs map[string]bool) 
 			klog.Warningf("Cleaned orphaned device: %s", id)
 		}
 	}
+}
+
+// GetAllocationMap 返回设备分配状态的副本
+func (a *SimpleAllocator) GetAllocationMap() map[string]string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	// 返回深拷贝防止并发修改
+	result := make(map[string]string)
+	for k, v := range a.deviceToPod {
+		result[k] = v
+	}
+	return result
 }
 
 // 错误定义

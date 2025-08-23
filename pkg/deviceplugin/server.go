@@ -157,7 +157,20 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 	response := pluginapi.AllocateResponse{}
 
 	// 修复：从请求的注解中获取 Pod UID（Kubernetes 标准方式）
+	// 方法1: 尝试从环境变量获取 Pod 信息
+	podName := os.Getenv("POD_NAME")
+	podNamespace := os.Getenv("POD_NAMESPACE")
 	podUID := ""
+	if podName != "" && podNamespace != "" {
+		pod, err := s.kubeClient.CoreV1().Pods(podNamespace).Get(ctx, podName, metav1.GetOptions{})
+		if err != nil {
+			klog.Warningf("Failed to get pod %s/%s: %v", podNamespace, podName, err)
+		} else {
+			podUID = string(pod.UID)
+			klog.Infof("Found pod UID via API: %s", podUID)
+		}
+	}
+
 	for _, containerReq := range req.ContainerRequests {
 		containerResp := new(pluginapi.ContainerAllocateResponse)
 

@@ -146,36 +146,6 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 	for _, containerReq := range req.ContainerRequests {
 		containerResp := new(pluginapi.ContainerAllocateResponse)
-		physicalDevices := make(map[string]bool) // 存储物理GPU索引
-		migDevices := make(map[string]bool)      // 存储MIG设备ID
-
-		// 收集设备信息并分类
-		for _, id := range containerReq.DevicesIDs {
-			if dev, exists := s.deviceMap[id]; exists {
-				physicalDevices[dev.PhysicalID()] = true
-
-				// 标记MIG设备
-				if dev.IsMIG() {
-					migDevices[id] = true
-				}
-
-				klog.Infof("Device %s mapped to physical GPU %s (MIG: %v)",
-					id, dev.PhysicalID(), dev.IsMIG())
-			} else {
-				klog.Errorf("Device %s not found in deviceMap! Possible configuration error", id)
-				return nil, fmt.Errorf("invalid device allocation request: device %s not found", id)
-			}
-		}
-
-		// 提取物理GPU索引列表（去重）
-		// 提取物理GPU索引列表（去重）
-		physicalIDs := make([]string, 0, len(physicalDevices))
-		for id := range physicalDevices {
-			physicalIDs = append(physicalIDs, id)
-		}
-
-		klog.Infof("Allocating %d devices for container: %v (Physical Indices: %v)",
-			len(containerReq.DevicesIDs), containerReq.DevicesIDs, physicalIDs)
 
 		// 尝试分配这些设备
 		if err := s.allocator.Allocate(containerReq.DevicesIDs); err != nil {
@@ -192,25 +162,6 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 		envs["NVIDIA_DISABLE_REQUIRE"] = "1"
 		envs["NVIDIA_REQUIRE_MIG"] = "1"
 
-		// 挂载MIG控制目录
-		containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-			HostPath:      "/dev/nvidia-caps",
-			ContainerPath: "/dev/nvidia-caps",
-			Permissions:   "rw",
-		})
-
-		// MIG设备特殊处理
-		if len(migDevices) > 0 {
-			migIDs := make([]string, 0, len(migDevices))
-			for id := range migDevices {
-				migIDs = append(migIDs, id)
-			}
-
-			klog.Infof("MIG allocation: physical GPUs=%v, MIG devices=%v",
-				physicalDevices, migIDs)
-
-		}
-
 		containerResp.Envs = envs
 
 		// 打印环境变量用于调试
@@ -218,33 +169,11 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			klog.Infof("Setting env: %s=%s", k, v)
 		}
 
-		// ================= 设备挂载设置 =================
-		for physID := range physicalDevices {
-			devicePath := fmt.Sprintf("/dev/nvidia%s", physID)
-			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-				HostPath:      devicePath,
-				ContainerPath: devicePath,
-				Permissions:   "rwm",
-			})
-			klog.Infof("Mounted GPU device: %s", devicePath)
-		}
-
-		// 必备控制设备挂载
-		controlDevices := []string{"nvidiactl", "nvidia-uvm", "nvidia-uvm-tools", "nvidia-modeset"}
-		for _, dev := range controlDevices {
-			path := fmt.Sprintf("/dev/%s", dev)
-			containerResp.Devices = append(containerResp.Devices, &pluginapi.DeviceSpec{
-				HostPath:      path,
-				ContainerPath: path,
-				Permissions:   "rwm",
-			})
-			klog.Infof("Mounted control device: %s", path)
-		}
-
 		response.ContainerResponses = append(response.ContainerResponses, containerResp)
 	}
 
-	klog.Infof("Allocation successful for %s", s.resource)
+	klog.Infof("Allocation successful for %s, req :%v, resp: %v", s.resource, req.ContainerRequests,
+		response.ContainerResponses)
 	return &response, nil
 }
 

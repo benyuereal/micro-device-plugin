@@ -35,8 +35,8 @@ docker push binyue/micro-device-plugin:v1.0.13
 
 ### 使用代理构建
 docker build \
-  --build-arg HTTP_PROXY=http://10.0.168.50:7890 \
-  --build-arg HTTPS_PROXY=http://10.0.168.50:7890 \
+  --build-arg HTTP_PROXY=http://10.0.168.58:7890 \
+  --build-arg HTTPS_PROXY=http://10.0.168.58:7890 \
   -t binyue/micro-device-plugin:v1.0.13 .
   
   
@@ -61,8 +61,8 @@ eval $(minikube docker-env)
 
 # 2. 现在所有 docker 命令都针对 Minikube 环境
 docker build \
-  --build-arg HTTP_PROXY=http://10.0.168.50:7890 \
-  --build-arg HTTPS_PROXY=http://10.0.168.50:7890 \
+  --build-arg HTTP_PROXY=http://10.0.168.58:7890 \
+  --build-arg HTTPS_PROXY=http://10.0.168.58:7890 \
   -t binyue/micro-device-plugin:v1.0.13 .
 
 # 3. 验证
@@ -291,4 +291,19 @@ sudo -E kubeadm init \
   --ignore-preflight-errors=Swap \
   --v=5
        
+```
+
+
+#### containerd引入包
+```shell
+# 1. 从 default 命名空间导出镜像
+sudo ctr -n default images export nvidia-pytorch.tar nvcr.io/nvidia/pytorch:24.05-py3
+
+# 2. 将镜像导入到 k8s.io 命名空间（Kubernetes 使用的命名空间）
+sudo ctr -n k8s.io images import nvidia-pytorch.tar
+
+# 3. 验证镜像已存在于 k8s.io 命名空间
+sudo ctr -n k8s.io images ls | grep pytorch
+# 或者使用 crictl
+crictl images | grep pytorch
 ```

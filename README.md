@@ -209,11 +209,26 @@ docker run --rm \
   --gpus '"device=MIG-xxxx-xxxx-xxxx-xxxx"' \
   nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
   
+  docker run --rm   --gpus '"device=0"'   nvidia/cuda:12.4.0-base-ubuntu22.04   bash -c "env|grep NVIDIA_VISIBLE_DEVICES"
   # 运行容器并执行测试命令
+  
+  docker run --rm --gpus all nvcr.io/nvidia/pytorch:24.05-py3 \
+  bash -c "nvidia-smi && echo NVIDIA_VISIBLE_DEVICES"
+  
+  
+  sudo ctr run --rm -t nvcr.io/nvidia/pytorch:24.05-py3 \
+  bash -c "nvidia-smi && echo NVIDIA_VISIBLE_DEVICES && env"
+  
+   docker run --rm --gpus '"device=MIG-f6cea3a7-2313-5911-842e-639d313cb6c1"' nvcr.io/nvidia/pytorch:24.05-py3 \
+  bash -c "nvidia-smi && echo NVIDIA_VISIBLE_DEVICES && env"
   
 docker run --rm --gpus all nvcr.io/nvidia/pytorch:24.05-py3 \
   bash -c "nvidia-smi && nvcc --version && echo 'CUDA available:' && python -c 'import torch; print(torch.cuda.is_available())'"
 
+
+### contianerd 测试镜像
+
+sudo ctr run --rm --runtime io.containerd.runtime.v1.linux   --gpus 0   nvcr.io/nvidia/pytorch:24.05-py3 nvidia-test   nvidia-smi
 ```
 
 #### k3s镜像拉取
@@ -262,4 +277,18 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
     
     // ... [现有代码] ...
 }
+```
+
+
+#### k8s安装启动
+```shell
+# 使用 kubeadm 初始化集群，指定 containerd 的 socket 路径
+# Calico 默认 CIDR，若用其他 CNI 需调整
+# 若未关闭 swap 需添加此参数
+sudo -E kubeadm init \
+  --pod-network-cidr=10.244.0.0/16 \
+  --cri-socket=unix:///run/containerd/containerd.sock \
+  --ignore-preflight-errors=Swap \
+  --v=5
+       
 ```

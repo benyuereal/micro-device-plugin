@@ -13,9 +13,8 @@ type Allocator interface {
 	Deallocate(ids []string)
 	GetAllocatedDevices() []string
 	CleanupOrphanedDevices(map[string]bool)
-	GetPodUID(deviceID string) string // 修改为 string 参数
-	GetAllocationMap() map[string]string
-	IsAvailable(id string) bool // 新增方法
+	GetPodUID(deviceID string) string    // 修改为 string 参数
+	GetAllocationMap() map[string]string // 新增方法
 }
 
 // SimpleAllocator 简单的内存分配器实现
@@ -114,14 +113,6 @@ func (a *SimpleAllocator) GetAllocationMap() map[string]string {
 		result[k] = v
 	}
 	return result
-}
-
-// IsAvailable 检查设备是否可用（未被分配）
-func (a *SimpleAllocator) IsAvailable(deviceID string) bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	_, exists := a.allocated[deviceID]
-	return !exists // 如果存在表示已分配，不可用
 }
 
 // 错误定义

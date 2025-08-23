@@ -14,3 +14,13 @@ kubectl exec -it nvidia-test-pod -- sh
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 
 ```
+
+
+### mutil allocate test
+
+```shell
+kubectl apply -f deployment/nvidia-tmp-pod.yaml
+kubectl describe pod nvidia-tmp-pod
+kubectl delete pod nvidia-tmp-pod
+kubectl logs nvidia-tmp-pod --tail=-1
+```

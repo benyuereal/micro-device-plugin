@@ -13,6 +13,11 @@ import (
 	"github.com/benyuereal/micro-device-plugin/pkg/allocator"
 	"github.com/benyuereal/micro-device-plugin/pkg/device"
 	"google.golang.org/grpc"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	pluginapi "k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
@@ -35,10 +40,15 @@ type DevicePluginServer struct {
 	lastDeviceState map[string]string           // 使用字符串记录健康状态
 	deviceMap       map[string]device.GPUDevice // 设备ID到设备对象的映射
 	cdiEnabled      bool
-	cdiPrefix       string // 添加CDI前缀配置
+	cdiPrefix       string                // 添加CDI前缀配置
+	kubeClient      *kubernetes.Clientset // 新增 Kubernetes 客户端
+	nodeName        string                // 新增节点名称
 }
 
-func New(vendor string, manager device.DeviceManager, cdiEnabled bool, cdiPrefix string) *DevicePluginServer {
+func New(vendor string, manager device.DeviceManager, cdiEnabled bool, cdiPrefix string, nodeName string) *DevicePluginServer {
+	// 创建 Kubernetes 客户端
+	config, _ := rest.InClusterConfig()
+	kubeClient, _ := kubernetes.NewForConfig(config)
 	return &DevicePluginServer{
 		vendor:          vendor,
 		resource:        vendor + ".com/microgpu",
@@ -51,6 +61,8 @@ func New(vendor string, manager device.DeviceManager, cdiEnabled bool, cdiPrefix
 		deviceMap:       make(map[string]device.GPUDevice),
 		cdiEnabled:      cdiEnabled,
 		cdiPrefix:       cdiPrefix,
+		kubeClient:      kubeClient,
+		nodeName:        nodeName,
 	}
 }
 
@@ -144,11 +156,14 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 	klog.Infof("Received Allocate request for %s: %v", s.resource, req.ContainerRequests)
 	response := pluginapi.AllocateResponse{}
 
+	// 修复：从请求的注解中获取 Pod UID（Kubernetes 标准方式）
+	podUID := ""
 	for _, containerReq := range req.ContainerRequests {
 		containerResp := new(pluginapi.ContainerAllocateResponse)
 
+		// 获取 Pod UI
 		// 尝试分配这些设备
-		if err := s.allocator.Allocate(containerReq.DevicesIDs); err != nil {
+		if err := s.allocator.Allocate(containerReq.DevicesIDs, podUID); err != nil {
 			klog.Errorf("Allocation failed for devices %v: %v", containerReq.DevicesIDs, err)
 			return nil, fmt.Errorf("allocation failed: %v", err)
 		}
@@ -210,6 +225,9 @@ func (s *DevicePluginServer) GetPreferredAllocation(ctx context.Context, req *pl
 func (s *DevicePluginServer) Start() error {
 	klog.Infof("Starting %s device plugin", s.vendor)
 
+	// 启动资源回收器（每 30 秒运行一次）
+	go s.ResourceRecycler(context.Background(), 30*time.Second)
+
 	// 如果是NVIDIA设备，配置MIG
 	if nvidiaManager, ok := s.manager.(*device.NVIDIAManager); ok {
 		nvidiaManager.ConfigureMIG()
@@ -262,7 +280,7 @@ func (s *DevicePluginServer) Start() error {
 	}
 
 	klog.Infof("%s device plugin started and registered with resource name %s", s.vendor, s.resource)
-	s.allocator = allocator.NewSimpleAllocator() // 确保分配器初始化
+
 	return nil
 }
 
@@ -347,6 +365,59 @@ func waitForSocket(ctx context.Context, socket string) error {
 				return nil
 			}
 			time.Sleep(restartDelay)
+		}
+	}
+}
+
+// 新增方法：资源回收器
+func (s *DevicePluginServer) ResourceRecycler(ctx context.Context, interval time.Duration) {
+	klog.Infof("Starting resource recycler for %s plugin", s.vendor)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			allocated := s.allocator.GetAllocatedDevices()
+			if len(allocated) == 0 {
+				continue
+			}
+
+			// 获取节点上所有 Pod
+			pods, err := s.kubeClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+				FieldSelector: "spec.nodeName=" + s.nodeName,
+			})
+			if err != nil {
+				klog.Errorf("Failed to list pods: %v", err)
+				continue
+			}
+
+			// 建立 Pod UID 映射
+			activePods := make(map[string]bool)
+			for _, pod := range pods.Items {
+				if pod.Status.Phase == corev1.PodRunning || pod.Status.Phase == corev1.PodPending {
+					activePods[string(pod.UID)] = true
+				}
+			}
+
+			// 检查已分配设备对应的 Pod
+			var toRelease []string
+			for deviceID := range s.allocator.(*allocator.SimpleAllocator).GetAllocationMap() {
+				if _, exists := activePods[s.allocator.GetPodUID(deviceID)]; !exists {
+					toRelease = append(toRelease, deviceID)
+					klog.Infof("Marking device %s for release (pod not active)", deviceID)
+				}
+			}
+
+			// 释放资源
+			if len(toRelease) > 0 {
+				s.allocator.Deallocate(toRelease)
+				klog.Infof("Released %d orphaned devices", len(toRelease))
+			}
+
+		case <-ctx.Done():
+			klog.Infof("Stopping resource recycler for %s plugin", s.vendor)
+			return
 		}
 	}
 }

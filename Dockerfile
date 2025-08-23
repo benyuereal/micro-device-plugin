@@ -14,6 +14,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # 第二阶段：使用Ubuntu基础镜像
 FROM ubuntu:22.04
 
+# 设置代理
+ENV http_proxy=http://10.0.168.58:7890
+ENV https_proxy=http://10.0.168.58:7890
+
 # 替换为阿里云源
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list && \
     sed -i 's|http://security.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list

@@ -18,11 +18,6 @@ FROM ubuntu:22.04
 ENV http_proxy=http://10.0.168.58:7890
 ENV https_proxy=http://10.0.168.58:7890
 
-# 替换为阿里云源
-RUN sed -i 's|http://archive.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list && \
-    sed -i 's|http://security.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g' /etc/apt/sources.list
-
-
 # 安装必要的运行依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

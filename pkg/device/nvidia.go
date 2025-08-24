@@ -114,7 +114,8 @@ func (m *NVIDIAManager) DiscoverGPUs() ([]GPUDevice, error) {
 		migMode := strings.TrimSpace(fields[3])
 
 		// 步骤2: 检查MIG模式
-		if migMode == "Enabled" {
+		if migMode == "Enabled" && os.Getenv("ENABLE_MIG") == "true" {
+
 			// 获取MIG设备
 			migDevices, err := m.discoverMIGDevices(gpuIndex)
 			if err != nil {

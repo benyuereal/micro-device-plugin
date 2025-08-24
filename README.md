@@ -35,8 +35,8 @@ docker push binyue/micro-device-plugin:v1.0.13
 
 ### 使用代理构建
 docker build \
-  --build-arg HTTP_PROXY=http://10.0.168.58:7890 \
-  --build-arg HTTPS_PROXY=http://10.0.168.58:7890 \
+  --build-arg HTTP_PROXY=http://10.0.168.12:7890 \
+  --build-arg HTTPS_PROXY=http://10.0.168.12:7890 \
   -t binyue/micro-device-plugin:v1.0.13 .
   
   
@@ -61,8 +61,8 @@ eval $(minikube docker-env)
 
 # 2. 现在所有 docker 命令都针对 Minikube 环境
 docker build \
-  --build-arg HTTP_PROXY=http://10.0.168.58:7890 \
-  --build-arg HTTPS_PROXY=http://10.0.168.58:7890 \
+  --build-arg HTTP_PROXY=http://10.0.168.12:7890 \
+  --build-arg HTTPS_PROXY=http://10.0.168.12:7890 \
   -t binyue/micro-device-plugin:v1.0.13 .
 
 # 3. 验证
@@ -286,6 +286,8 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 # Calico 默认 CIDR，若用其他 CNI 需调整
 # 若未关闭 swap 需添加此参数
 sudo -E kubeadm init \
+ --control-plane-endpoint "10.0.168.12:6443" \
+  --apiserver-advertise-address "10.0.168.12" \
   --pod-network-cidr=10.244.0.0/16 \
   --cri-socket=unix:///run/containerd/containerd.sock \
   --ignore-preflight-errors=Swap \

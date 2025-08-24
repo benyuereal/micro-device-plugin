@@ -3,6 +3,7 @@ kind: Pod
 metadata:
   name: nvidia-tmp-pod
 spec:
+
   runtimeClassName: nvidia  # 使用 NVIDIA 运行时
   restartPolicy: Never  # 执行一次后退出
   containers:

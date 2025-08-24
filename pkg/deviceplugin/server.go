@@ -424,7 +424,7 @@ func (s *DevicePluginServer) ResourceRecycler(ctx context.Context, interval time
 			// 释放资源
 			if len(toRelease) > 0 {
 				s.allocator.Deallocate(toRelease)
-				klog.Infof("Released %d orphaned devices", len(toRelease))
+				klog.Infof("Released %d orphaned devices, deivce %v", len(toRelease), toRelease)
 			}
 
 		case <-ctx.Done():

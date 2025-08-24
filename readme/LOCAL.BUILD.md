@@ -6,7 +6,7 @@
 
 git pull 
 
-docker build   --build-arg HTTP_PROXY=http://10.0.168.58:7890   --build-arg HTTPS_PROXY=http://10.0.168.58:7890   -t binyue/micro-device-plugin:v1.0.13 .
+docker build   --build-arg HTTP_PROXY=http://10.0.168.12:7890   --build-arg HTTPS_PROXY=http://10.0.168.12:7890   -t binyue/micro-device-plugin:v1.0.13 .
 
 
 

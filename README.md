@@ -48,7 +48,10 @@ docker build \
 
 
 ### 导入到microk8s
-docker save binyue/micro-device-plugin:v1.0.13 -o micro-device-plugin.tar
+### 导出
+docker save -o   text-generation-inference.tar ghcr.io/huggingface/text-generation-inference:1.4.1
+### 倒入
+docker save -o  binyue/micro-device-plugin:v1.0.13 -o micro-device-plugin.tar
 sudo  ctr image  import micro-device-plugin.tar
 sudo  ctr images ls | grep micro-device-plugin
 

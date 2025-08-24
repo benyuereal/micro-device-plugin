@@ -176,6 +176,18 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 
 		// 获取 Pod UI
 		// 尝试分配这些设备
+		// 在分配设备前检查设备是否可用
+		for _, devID := range containerReq.DevicesIDs {
+			if !s.allocator.IsAvailable(devID) {
+				// 如果设备已被分配但Pod不存在，清除错误状态
+				if !s.isPodActive(s.allocator.GetPodUID(devID)) {
+					s.allocator.Deallocate([]string{devID})
+				} else {
+					return nil, fmt.Errorf("device %s is already allocated", devID)
+				}
+			}
+		}
+
 		if err := s.allocator.Allocate(containerReq.DevicesIDs, podUID); err != nil {
 			klog.Errorf("Allocation failed for devices %v: %v", containerReq.DevicesIDs, err)
 			return nil, fmt.Errorf("allocation failed: %v", err)
@@ -390,34 +402,24 @@ func (s *DevicePluginServer) ResourceRecycler(ctx context.Context, interval time
 	for {
 		select {
 		case <-ticker.C:
-			allocated := s.allocator.GetAllocatedDevices()
-			if len(allocated) == 0 {
-				continue
-			}
 
-			// 获取节点上所有 Pod
-			pods, err := s.kubeClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{
-				FieldSelector: "spec.nodeName=" + s.nodeName,
-			})
-			if err != nil {
-				klog.Errorf("Failed to list pods: %v", err)
+			allocatedMap := s.allocator.GetAllocationMap() // 获取设备到 Pod 的映射
+			if len(allocatedMap) == 0 {
 				continue
-			}
-
-			// 建立 Pod UID 映射
-			activePods := make(map[string]bool)
-			for _, pod := range pods.Items {
-				if pod.Status.Phase == corev1.PodRunning || pod.Status.Phase == corev1.PodPending {
-					activePods[string(pod.UID)] = true
-				}
 			}
 
 			// 检查已分配设备对应的 Pod
 			var toRelease []string
-			for deviceID := range s.allocator.(*allocator.SimpleAllocator).GetAllocationMap() {
-				if _, exists := activePods[s.allocator.GetPodUID(deviceID)]; !exists {
+			for deviceID, podUID := range allocatedMap {
+				if podUID == "" {
+					toRelease = append(toRelease, deviceID) // 无主设备直接释放
+					continue
+				}
+
+				// 检查 Pod 状态：只有非活动状态（终止/完成）才释放
+				if !s.isPodActive(podUID) {
 					toRelease = append(toRelease, deviceID)
-					klog.Infof("Marking device %s for release (pod not active)", deviceID)
+					klog.Infof("Marking device %s for release (pod %s is inactive)", deviceID, podUID)
 				}
 			}
 
@@ -432,4 +434,26 @@ func (s *DevicePluginServer) ResourceRecycler(ctx context.Context, interval time
 			return
 		}
 	}
+}
+
+// isPodActive 检查 Pod 是否处于活动状态（非终止/完成）
+func (s *DevicePluginServer) isPodActive(podUID string) bool {
+	if podUID == "" {
+		return false
+	}
+	pod, err := s.kubeClient.CoreV1().Pods("").Get(context.Background(), "", metav1.GetOptions{})
+	if err != nil {
+		klog.Warningf("Failed to get pod with UID %s: %v", podUID, err)
+		return false // 默认按非活动处理
+	}
+	if pod.DeletionTimestamp != nil {
+		return false // 正在终止，视为非活动
+	}
+
+	// 活动状态：Running 或 Pending
+	if pod.Status.Phase == corev1.PodRunning || pod.Status.Phase == corev1.PodPending {
+		return true
+	}
+	// 非活动状态：Succeeded（完成）、Failed（失败）或正在删除（DeletionTimestamp 非空）
+	return false
 }

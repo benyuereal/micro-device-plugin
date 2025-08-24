@@ -235,12 +235,11 @@ func (s *DevicePluginServer) GetPreferredAllocation(ctx context.Context, req *pl
 // *********** 服务管理方法 ***********
 
 // Start 启动设备插件服务
-func (s *DevicePluginServer) Start() error {
+func (s *DevicePluginServer) Start(ctx context.Context) error {
 	klog.Infof("Starting %s device plugin", s.vendor)
 
 	// 启动资源回收器（每 30 秒运行一次）
-	go s.ResourceRecycler(context.Background(), 30*time.Second)
-
+	go s.ResourceRecycler(ctx, 30*time.Second) // 共享主流程上下文
 	// 如果是NVIDIA设备，配置MIG
 	if nvidiaManager, ok := s.manager.(*device.NVIDIAManager); ok {
 		nvidiaManager.ConfigureMIG()

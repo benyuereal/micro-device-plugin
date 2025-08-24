@@ -1,12 +1,12 @@
-# 修改后的 qwen-statefulset-local-direct.yaml
+# qwen-statefulset-local-direct.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: qwen-mini
 spec:
   serviceName: "qwen-service"
-  replicas: 2  # 增加副本数
-  podManagementPolicy: OrderedReady
+  replicas: 1
+  podManagementPolicy: OrderedReady  # 确保一次只处理一个Pod
   selector:
     matchLabels:
       app: qwen
@@ -15,16 +15,18 @@ spec:
       labels:
         app: qwen
     spec:
-      # 新增拓扑分布约束 - 核心修改点
-      topologySpreadConstraints:
-        - maxSkew: 2  # 节点间最大Pod数差异
-          topologyKey: kubernetes.io/hostname  # 节点级别的拓扑域
-          whenUnsatisfiable: DoNotSchedule  # 不满足条件时不调度
-          labelSelector:
-            matchLabels:
-              app: qwen
-
-      runtimeClassName: nvidia
+      terminationGracePeriodSeconds: 120  # 给Pod足够的时间优雅终止
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - qwen
+              topologyKey: kubernetes.io/hostname
+      runtimeClassName: nvidia  # 使用 NVIDIA 运行时
       containers:
         - name: text-generation
           image: ghcr.io/huggingface/text-generation-inference:1.4.1

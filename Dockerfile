@@ -1,9 +1,16 @@
 # 第一阶段：使用官方golang镜像构建
-FROM golang:1.19 AS builder
+FROM golang:1.24 AS builder
 
 # 设置工作目录
 WORKDIR /workspace
 COPY . .
+
+# 设置代理（通过构建参数）
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV http_proxy=${HTTP_PROXY}
+ENV https_proxy=${HTTPS_PROXY}
+
 
 # 静态编译，确保零依赖
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
@@ -14,9 +21,6 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # 第二阶段：使用Ubuntu基础镜像
 FROM ubuntu:22.04
 
-# 设置代理
-ENV http_proxy=http://10.0.168.12:7890
-ENV https_proxy=http://10.0.168.12:7890
 
 # 安装必要的运行依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \

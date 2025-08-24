@@ -5,7 +5,8 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["list", "watch"]
+    verbs: ["list", "watch", "get"]  # 增加get权限
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

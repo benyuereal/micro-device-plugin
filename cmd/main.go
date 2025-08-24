@@ -68,7 +68,7 @@ func main() {
 			defer wg.Done()
 
 			srv := deviceplugin.New(vendor, manager, cdiEnabled, cdiPrefix, nodeName)
-			if err := srv.Start(); err != nil {
+			if err := srv.Start(ctx); err != nil {
 				klog.Errorf("Failed to start %s device plugin: %v", vendor, err)
 				return
 			}

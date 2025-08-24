@@ -49,8 +49,8 @@ docker build \
 
 ### 导入到microk8s
 docker save binyue/micro-device-plugin:v1.0.13 -o micro-device-plugin.tar
-sudo microk8s ctr image import micro-device-plugin.tar
-sudo microk8s ctr images ls | grep micro-device-plugin
+sudo  ctr image  import micro-device-plugin.tar
+sudo  ctr images ls | grep micro-device-plugin
 
 ```
 
@@ -121,8 +121,8 @@ helm install --wait gpu-operator nvidia/gpu-operator \
 #### 镜像复制
 ```shell
 docker save binyue/micro-device-plugin:v1.0.13 -o micro-plugin.tar
-sudo microk8s ctr image import 
-sudo microk8s ctr images ls | grep pytorch
+sudo ctr -n k8s.io   image import   micro-plugin.tar
+sudo ctr -n k8s.io images   ls | grep pytorch
 ```
 
 

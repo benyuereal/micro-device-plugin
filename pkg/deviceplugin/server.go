@@ -209,6 +209,19 @@ func (s *DevicePluginServer) Allocate(ctx context.Context, req *pluginapi.Alloca
 			klog.Infof("Setting env: %s=%s", k, v)
 		}
 
+		// 添加 CDI 设备注入
+		if s.cdiEnabled {
+			cdiDevices := make([]string, len(containerReq.DevicesIDs))
+			for i, id := range containerReq.DevicesIDs {
+				cdiDevices[i] = fmt.Sprintf("%s/%s=%s", s.cdiPrefix, s.vendor, id)
+			}
+			containerResp.CDIDevices = []*pluginapi.CDIDevice{
+				{
+					Name: strings.Join(cdiDevices, ","),
+				},
+			}
+		}
+
 		response.ContainerResponses = append(response.ContainerResponses, containerResp)
 	}
 

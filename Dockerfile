@@ -21,9 +21,6 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 # 第二阶段：使用Ubuntu基础镜像
 FROM ubuntu:22.04
 
-# 设置代理
-ENV http_proxy=http://10.0.168.12:7890
-ENV https_proxy=http://10.0.168.12:7890
 
 # 安装必要的运行依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -111,11 +111,11 @@ kubectl apply -f manifests/daemonset.yaml
 ```
 
 ## 🔧 配置选项
-| 环境变量 | 默认值 | 描述 |
-|---------|--------|------|
-| `ENABLE_MIG` | `false` | 启用 MIG 管理 |
-| `MIG_PROFILE` | `3g.20gb` | MIG 切分配置 |
-| `MIG_INSTANCE_COUNT` | `0` | MIG 实例数量 (0=自动计算) |
-| `SKIP_CONFIGURED` | `true` | 跳过已配置的 MIG 设备 |
-| `CDI_ENABLED` | `false` | 启用 CDI 设备注入 |
+| 环境变量 | 默认值            | 描述 |
+|---------|----------------|------|
+| `ENABLE_MIG` | `true`         | 启用 MIG 管理 |
+| `MIG_PROFILE` | `3g.20gb`      | MIG 切分配置 |
+| `MIG_INSTANCE_COUNT` | `0`            | MIG 实例数量 (0=自动计算) |
+| `SKIP_CONFIGURED` | `true`         | 跳过已配置的 MIG 设备 |
+| `CDI_ENABLED` | `false`        | 启用 CDI 设备注入 |
 | `CDI_PREFIX` | `micro.device` | CDI 设备前缀 |
